@@ -85,7 +85,7 @@ function buildUI() {
 
   const css = createElement('style', `
     body { flex-direction: column; gap: 10px; }
-    #panel { display:flex; flex-wrap:wrap; gap:6px 18px; max-width:${W}px; padding:10px 14px;
+    #panel { display:flex; flex-wrap:wrap; gap:6px 18px; max-width:min(${W}px, calc(100vw - 32px)); box-sizing:border-box; padding:10px 14px;
       font:13px/1.4 serif; color:#2a2522; background:#e8dfcc; border-radius:4px; }
     #panel .row { display:flex; align-items:center; gap:8px; }
     #panel input[type=range] { width:120px; accent-color:rgb(${SHU}); }
@@ -111,6 +111,11 @@ function draw() {
   drawWeather();
   drawTower();
   drawRings();
+  // 止まっていることが画面で分かるようにする（「視差効果を減らす」設定だと最初から止まる）
+  if (paused) {
+    noStroke(); fill(...INK, 200); textAlign(CENTER); textSize(14);
+    text('停止中　スペースキーで動かす', W / 2, H - 16);
+  }
 
   recordFrame(performance.now() - started);
 }
@@ -349,7 +354,7 @@ function mouseDragged() {
 
 function keyPressed() {
   if (key === 's') saveCanvas('ki-wa-oboete-iru', 'png');
-  if (key === ' ') { paused = !paused; updateLoop(); return false; }
+  if (key === ' ') { paused = !paused; updateLoop(); redraw(); return false; }
   if (key === 'f') meter.hidden = !meter.hidden;
   if (key === 'e') startQuake();
 }
