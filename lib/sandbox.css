@@ -1,0 +1,43 @@
+/* Sandbox のページ。一覧と同じ、焼けた和紙・墨・褪せた朱 */
+:root { --paper: #e2d4b8; --paper-deep: #d6c5a4; --ink: #241c16; --shu: #ac422c; --muted: #6a5c4c; --stage: #1d1915; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); }
+body { font: 15px/1.7 serif; padding: 28px 16px 48px; }
+main { max-width: 1240px; margin: 0 auto; }
+a { color: inherit; }
+a:focus-visible, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--shu); outline-offset: 2px; }
+.back { font-size: 14px; color: var(--muted); }
+h1 { font-size: 26px; font-weight: normal; margin: 6px 0 2px; }
+.lead { color: var(--muted); margin: 0 0 20px; }
+.lead code { font-size: 0.92em; }
+
+.sandbox { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+/* 狭い画面では 1 列にし、絵を先に見せる */
+@media (max-width: 860px) { .sandbox { grid-template-columns: minmax(0, 1fr); } #stage { order: -1; } }
+
+.editor { display: flex; flex-direction: column; gap: 10px; }
+.editor label { font-size: 14px; color: var(--muted); }
+textarea {
+  box-sizing: border-box; width: 100%; min-height: 460px; resize: vertical;
+  padding: 12px 14px; border: 1px solid #a8977a; border-radius: 4px;
+  background: #f3ebdb; color: var(--ink);
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2;
+  white-space: pre; overflow-wrap: normal; overflow-x: auto; /* コードは折り返さず、横にスクロールする */
+}
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+button {
+  font: inherit; font-size: 14px; padding: 6px 16px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--ink); background: transparent; color: var(--ink);
+}
+button.primary { background: var(--ink); color: var(--paper); }
+button:hover { border-color: var(--shu); }
+.hint { font-size: 13px; color: var(--muted); }
+#status { min-height: 1.7em; margin: 0; font-size: 14px; color: var(--muted); }
+#status.error { color: var(--shu); }
+
+#stage { background: var(--stage); border-radius: 4px; aspect-ratio: 3 / 2; display: flex; }
+#stage iframe { flex: 1; width: 100%; height: 100%; border: 0; display: block; }
+
+.notes { margin-top: 28px; }
+.notes h2 { font-size: 18px; font-weight: normal; margin: 0 0 6px; }
+.notes ul { margin: 0; padding-left: 1.2em; }
+.notes p { margin: 12px 0 0; font-size: 14px; color: var(--muted); }

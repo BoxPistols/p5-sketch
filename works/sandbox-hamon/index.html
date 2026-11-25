@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>三角関数の波紋（Sandbox）</title>
+  <meta name="description" content="中心からの距離を sin() に入れて、点の大きさと色を波にする。数字を変えると波の間隔や速さが変わる。">
+  <meta name="theme-color" content="#3a4656">
+  <link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="三角関数の波紋（Sandbox）">
+  <meta property="og:description" content="中心からの距離を sin() に入れて、点の大きさと色を波にする。数字を変えると波の間隔や速さが変わる。">
+  <meta property="og:url" content="https://boxpistols.github.io/p5-sketch/works/sandbox-hamon/">
+  <meta property="og:image" content="https://boxpistols.github.io/p5-sketch/works/sandbox-hamon/capture.png">
+  <meta property="og:locale" content="ja_JP">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../lib/sandbox.css">
+</head>
+<body>
+  <main>
+    <a class="back" href="../../">作品の一覧へ</a>
+    <h1>三角関数の波紋</h1>
+    <p class="lead">格子に並べた点の大きさと色を、中心からの距離の <code>sin()</code> で決めています。</p>
+    <div class="sandbox">
+      <div class="editor">
+        <label for="code">スケッチのコード（書き換えて「実行」）</label>
+        <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <div class="actions">
+          <button type="button" id="run" class="primary">実行</button>
+          <button type="button" id="reset">元のコードに戻す</button>
+          <span class="hint">⌘ / Ctrl + Enter でも実行できます。Esc のあと Tab で欄の外へ出ます</span>
+        </div>
+        <p id="status" role="status"></p>
+      </div>
+      <div id="stage"></div>
+    </div>
+    <section class="notes">
+      <h2>試してみる</h2>
+      <ul>
+        <li><code>d * 0.06</code> の 0.06 を大きくすると、波の間隔が詰まる</li>
+        <li><code>frameCount * 0.1</code> の符号を変えると、波が外から内へ向かう</li>
+        <li><code>dist()</code> の中心を <code>mouseX, mouseY</code> にすると、マウスから波が広がる</li>
+      </ul>
+      <p>書き換えた内容は保存されません。再読み込みすると元のコードに戻ります。このスケッチは <a href="https://dev-album.vercel.app/p5js/math/trigonometry">Dev Album の p5.js マニュアル</a>の作例を元にしています。</p>
+    </section>
+  </main>
+  <script type="text/p5" id="source">
+function setup() {
+  pixelDensity(1);
+  frameRate(30);
+  createCanvas(600, 400);
+  colorMode(HSB, 360, 100, 100, 100);
+  noStroke();
+}
+
+function draw() {
+  background(250, 40, 8);
+  for (let y = 20; y < height; y += 20) {
+    for (let x = 20; x < width; x += 20) {
+      // 中心からの距離を sin に入れると、波紋になる
+      const d = dist(x, y, width / 2, height / 2);
+      const s = sin(d * 0.06 - frameCount * 0.1);
+      fill(300 + s * 50, 65, 100);
+      circle(x, y, 4 + (s + 1) * 7);
+    }
+  }
+}
+  </script>
+  <script src="../../lib/sandbox.js"></script>
+</body>
+</html>

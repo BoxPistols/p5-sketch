@@ -25,9 +25,10 @@
     a { color: inherit; text-decoration: none; display: block; }
     a:focus-visible { outline: 2px solid var(--shu); outline-offset: 4px; }
     img { width: 100%; aspect-ratio: 1240 / 860; object-fit: cover; display: block; background: #d9cfbb; }
-    h2 { font-size: 18px; font-weight: normal; margin: 10px 0 2px; }
-    a:hover h2 { color: var(--shu); }
+    li h2, li h3 { font-size: 18px; font-weight: normal; margin: 10px 0 2px; }
+    a:hover h2, a:hover h3 { color: var(--shu); }
     p { margin: 0; color: var(--muted); font-size: 14px; }
+    h2.section { font-size: 22px; font-weight: normal; margin: 48px 0 4px; }
   </style>
 </head>
 <body>
@@ -35,22 +36,32 @@
     <h1>p5 sketches</h1>
     <p class="lead">p5.js で作った作品。画像を選ぶと、ブラウザの中で動きます。</p>
     <ul id="works"></ul>
+    <section id="sandboxes" hidden>
+      <h2 class="section">Sandbox</h2>
+      <p class="lead">基本のスケッチを、ページの中で書き換えて動かせます。数字を 1 つ変えて、絵がどう変わるかを確かめます。</p>
+      <ul id="sandbox-list"></ul>
+    </section>
   </main>
   <script>
     // works.json の並びをそのまま一覧にする。作品を足すときは works.json に 1 件足す
+    // kind が "sandbox" のものは、作品とは分けて「Sandbox」の欄に並べる
     fetch('works.json')
       .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then((works) => {
         const list = document.getElementById('works');
+        const sandboxes = document.getElementById('sandbox-list');
         for (const w of works) {
           const li = document.createElement('li');
+          // Sandbox の欄は見出し（h2）の下なので、題名を 1 段下げる
+          const h = w.kind === 'sandbox' ? 'h3' : 'h2';
           li.innerHTML = `<a href="works/${w.slug}/">
             <img src="works/${w.slug}/capture.png" alt="" loading="lazy">
-            <h2></h2><p></p></a>`;
-          li.querySelector('h2').textContent = w.title;
+            <${h}></${h}><p></p></a>`;
+          li.querySelector(h).textContent = w.title;
           li.querySelector('p').textContent = w.summary;
-          list.append(li);
+          (w.kind === 'sandbox' ? sandboxes : list).append(li);
         }
+        document.getElementById('sandboxes').hidden = sandboxes.children.length === 0;
       })
       .catch(() => {
         document.getElementById('works').textContent = '作品の一覧を読めませんでした。pnpm dev で開いてください（file:// では読めません）。';

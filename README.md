@@ -45,6 +45,22 @@ p5.js で作った作品を置くリポジトリ。1 作品 1 フォルダで `w
 
 macOS の「視差効果を減らす」（Windows の「アニメーション効果」オフ）が有効なときは、止めた状態で開く。
 
+## Sandbox
+
+基本のスケッチを、ページの中で書き換えて動かせるページ。一覧では作品と分けて「Sandbox」の欄に並ぶ（`works.json` で `"kind": "sandbox"` を付けたもの）。作例は [Dev Album の p5.js マニュアル](https://dev-album.vercel.app/p5js)から持ってきている。
+
+| ページ | 内容 |
+|---|---|
+| [`works/sandbox-hamon/`](works/sandbox-hamon/) | 三角関数の波紋。中心からの距離を `sin()` に入れて、点の大きさと色を波にする |
+| [`works/sandbox-noise/`](works/sandbox-noise/) | ノイズの流れ。点が `noise()` の示す向きへ進み、線の跡が流れになる |
+| [`works/sandbox-tree/`](works/sandbox-tree/) | 再帰で育つ木。枝を 1 本描いたら、短くした枝を左右に 2 本、同じ関数で描く |
+
+- 左の欄でコードを書き換え、「実行」（⌘ / Ctrl + Enter）で右の枠に描き直す。「元のコードに戻す」で最初の状態に戻る。書き換えは保存しない。
+- エラーは欄の下に「何行目か」と一緒に出る。
+- コードは各ページの `<script type="text/p5" id="source">` に置く。ファイルで直接開いても読めるよう、別ファイルにしていない。構文は `pnpm check` が調べる。
+- 実行するたびに `srcdoc` の iframe を作り直し、前のスケッチを残さない。枠は `sandbox` 属性で親のページから切り離す。ただし file:// で開いたときは、その枠から `lib/` の p5.js を読めないので外している。
+- 仕組みは `lib/sandbox.js` と `lib/sandbox.css` にまとめてあり、3 つのページで共有する。新しく足すときは、既存のページを複製してコードと説明を書き換え、`works.json` に `"kind": "sandbox"` で 1 件足す。
+
 ## 動かす
 
 Node.js 18 以降があればよい。依存パッケージは無いので `pnpm install` は要らない。
@@ -61,7 +77,7 @@ pnpm dev        # 一覧ページをブラウザで開く。ファイルを保�
 | `pnpm dev --port 5174` | ポートを変える |
 | `pnpm new <slug> "<題名>"` | 新しい作品のひな形を作り、一覧に載せる |
 | `pnpm capture [slug]` | 作品の画面を撮り、`works/<slug>/capture.png` に保存する（一覧と README の画像） |
-| `pnpm check` | スクリプトの構文を調べる |
+| `pnpm check` | スクリプトと、Sandbox のページのコードの構文を調べる |
 
 一覧ページは `works.json` を読むので、`index.html` を直接ファイルで開くと一覧が出ない。`pnpm dev` から開く。作品のページはファイルで直接開いても動く。
 
@@ -78,9 +94,12 @@ pnpm dev        # 一覧ページをブラウザで開く。ファイルを保�
 │       ├── sketch.js   # 作品本体（グローバルモード）
 │       └── capture.png # pnpm capture で撮った画面
 ├── lib/
-│   └── p5-2.4.0.min.js # p5.js 本体。全作品で共有する
+│   ├── p5-2.4.0.min.js # p5.js 本体。全作品で共有する
+│   ├── sandbox.js      # Sandbox のページの仕組み（書き換えて実行する）
+│   └── sandbox.css
 ├── scripts/
 │   ├── capture.mjs     # ヘッドレスの Chrome で画面を撮る
+│   ├── check-sandboxes.mjs # Sandbox のページのコードの構文を調べる
 │   └── new-work.mjs    # 作品のひな形を作る
 ├── serve.mjs           # 依存なしの開発サーバー
 └── .nojekyll           # GitHub Pages で Jekyll を通さない
