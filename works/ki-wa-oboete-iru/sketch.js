@@ -660,14 +660,16 @@ function readRingUnderPointer(s) {
   circle(INSET.x, INSET.y, 4);
   // 丸窓が小さく見えるほど輪が詰まるので、そのときだけ虫眼鏡を出す
   const loupe = s < 2;
-  if (loupe) drawLoupe(s, ring);
-  showRingCard(k, ring, INSET.x - 140, loupe ? INSET.y - INSET.r - 2 * 70 - 34 - 130 : INSET.y - INSET.r - 120);
+  // 虫眼鏡と札は指している場所のすぐそばに出す。虫眼鏡は指先の真上、札はその左
+  const lens = loupe ? drawLoupe(s, ring) : null;
+  if (lens) showRingCard(k, ring, lens.x - lens.r - 14, lens.y - lens.r);
+  else showRingCard(k, ring, mouseX - 24, mouseY - 40);
 }
 
 // 虫眼鏡：3 倍の解像度で描いた年輪から指している場所を切り出し、丸窓の下に大きく見せる
 function drawLoupe(s, ring) {
   const LR = 70;
-  const lx = INSET.x, ly = INSET.y - INSET.r - LR - 34; // 丸窓の上の空に出す
+  const lx = mouseX, ly = mouseY - LR - 22; // 指先の真上。指している所から目を動かさずに読める
   const gx = rings.width / 2 + ((mouseX - INSET.x) / s) * RS;
   const gy = rings.height / 2 + ((mouseY - INSET.y) / s) * RS;
   stroke(...INK, 120); strokeWeight(1);
@@ -686,8 +688,9 @@ function drawLoupe(s, ring) {
   noFill(); stroke(...INK); strokeWeight(2.5);
   circle(lx, ly, LR * 2);
   noStroke(); fill(...INK, 170); textAlign(CENTER, TOP); textSize(14);
-  text(`${(RS / s).toFixed(1)} 倍に拡大`, lx, ly + LR + 6);
+  text(`${(RS / s).toFixed(1)} 倍に拡大`, lx, ly - LR - 20); // 下は指先なので、倍率は上に
   textAlign(LEFT, BASELINE);
+  return { x: lx, y: ly, r: LR };
 }
 
 function describeYear(k, ring) {
@@ -703,15 +706,20 @@ function describeYear(k, ring) {
   return lines;
 }
 
-function showRingCard(k, ring, leftX, topY) {
-  const box = document.querySelector('canvas').getBoundingClientRect();
+// 札は rightX（キャンバスの座標）に右端をそろえて出す。画面からはみ出すときは内側へ寄せる
+function showRingCard(k, ring, rightX, topY) {
+  // 先頭の canvas は裏で使う描き置き（大きさ 0）のことがあるので、表示しているキャンバスそのものを測る
+  const box = drawingContext.canvas.getBoundingClientRect();
   const scale = box.width / W;
   ringCard.html('');
   createElement('strong', `${kanjiNumber(k)}年目の輪`).parent(ringCard);
   for (const t of describeYear(k, ring)) createP(t).parent(ringCard);
   // 札は丸窓（と虫眼鏡）の上に出し、輪を隠さない
   ringCard.show();
-  ringCard.position(box.left + window.scrollX + leftX * scale, box.top + window.scrollY + topY * scale);
+  const cw = ringCard.elt.offsetWidth, chh = ringCard.elt.offsetHeight;
+  const left = constrain(box.left + rightX * scale - cw, 4, window.innerWidth - cw - 4);
+  const top = constrain(box.top + topY * scale, 4, window.innerHeight - chh - 4);
+  ringCard.position(left + window.scrollX, top + window.scrollY);
 }
 
 // 止まっている間も、断面の上でマウスを動かしたら読めるようにする
