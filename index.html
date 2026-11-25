@@ -39,7 +39,7 @@
   <script>
     // works.json の並びをそのまま一覧にする。作品を足すときは works.json に 1 件足す
     fetch('works.json')
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then((works) => {
         const list = document.getElementById('works');
         for (const w of works) {

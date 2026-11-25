@@ -26,7 +26,12 @@ const reloadSnippet = `<script>new EventSource('/__reload').onmessage=()=>locati
 const clients = new Set();
 
 createServer(async (req, res) => {
-  const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  let path;
+  try {
+    path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  } catch {
+    return res.writeHead(400).end('bad request');
+  }
   if (path === '/__reload') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
     clients.add(res);

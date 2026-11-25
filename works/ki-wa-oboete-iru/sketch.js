@@ -36,14 +36,16 @@ let dragShake = 0;
 // 年輪
 let rings, ringR = 2, age = 0, yearClock = 0, growthDip = 0;
 let ringLog = [];                // 1 年ごとの輪の記録。断面に触れたときの説明に使う
-let ringCard, learnDialog;
-let shinbokuAt = null;           // 御神木になった瞬間（millis）。注連縄を張る演出と告知に使う                     // その年の輪を説明する札（DOM）
+let ringCard, learnDialog;       // 年輪を説明する札・解説ダイアログ（DOM）
+let ringCardState = { key: '', left: null, top: null }; // 札の DOM 再構築を抑えるキャッシュ
+let shinbokuAt = null;           // 御神木になった瞬間（millis）。注連縄を張る演出と告知に使う
 let yearQuake = 0, yearStorm = 0; // その年に受けた揺れと嵐の大きさ
 const RING_MAX = 150;             // 断面の半径（画面上）。塔が主役だが、年輪が読める大きさは保つ
 const RS = 3;                     // 年輪は 3 倍の解像度で描いて取っておき、虫眼鏡で拡大して見せる
 const MAX_AGE = 1000;             // 数えるのは千年まで
 const GROW_TAU = 260;             // 太り方の時定数。三百年で断面の 7 割、五百年で 8 割半、千年でほぼいっぱい
 const SHINBOKU_AGE = 300;         // この樹齢から御神木（注連縄を張る）。明確な定義は無く、三百年から五百年を目安にする
+const SCAR_THRESHOLD = 0.6;       // この大きさを超える揺れを地震の跡（朱の輪）として残す
 
 let drops = [];
 // 雨・雪・風が何をしているかを絵で見せるための状態
@@ -89,7 +91,10 @@ function resetTower() {
 
 function resetRings() {
   rings.clear();
-  ringR = 2; age = 0; growthDip = 0; ringLog = []; shinbokuAt = null;
+  ringR = 2; age = 0; yearClock = 0; growthDip = 0;
+  yearQuake = 0; yearStorm = 0; quakeRecorded = false;
+  ringLog = []; shinbokuAt = null;
+  hideRingCard();
   // 髄（中心）
   rings.noStroke();
   rings.fill(...INK, 200);
@@ -131,24 +136,25 @@ function buildUI() {
   ui.max = createButton('すべて最大').parent(btns).mousePressed(toggleMax); // いちばん強い操作なので右端に置く
 
   const css = createElement('style', `
+    :root { --ink:rgb(${INK}); --shu:rgb(${SHU}); --kasumi:rgb(${KASUMI}); --mincho:"Hiragino Mincho ProN","Yu Mincho",serif; }
     body { flex-direction: column; gap: 10px; }
     #panel { display:flex; flex-wrap:wrap; gap:6px 18px; max-width:min(${W}px, calc(100vw - 32px)); box-sizing:border-box; padding:10px 14px;
       font:14px/1.4 serif; color:#2a2522; background:#cdbf9f; border-radius:4px; }
     #panel .row { display:flex; align-items:center; gap:8px; }
-    #panel input[type=range] { width:120px; accent-color:rgb(${SHU}); }
+    #panel input[type=range] { width:120px; accent-color:var(--shu); }
     #panel button, #panel select { font:inherit; padding:3px 10px; background:#e2d6ba;
       border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
-    #panel input[type=checkbox] { accent-color:rgb(${INK}); width:16px; height:16px; } /* OS の青を使わず墨色に */
+    #panel input[type=checkbox] { accent-color:var(--ink); width:16px; height:16px; } /* OS の青を使わず墨色に */
     #panel .readout { min-width:6.5em; color:#4a3f34; font-size:14px; }
     #panel .seg { display:inline-flex; border:1px solid #2a2522; border-radius:3px; overflow:hidden; }
     #panel .seg label { position:relative; display:inline-flex; cursor:pointer; }
     #panel .seg label + label { border-left:1px solid #2a2522; }
     #panel .seg input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
     #panel .seg span { padding:3px 12px; background:#e2d6ba; }
-    #panel .seg input:checked + span { background:rgb(${INK}); color:#efe4cc; }
-    #panel .seg input:focus-visible + span { outline:2px solid rgb(${SHU}); outline-offset:-3px; }
-    #panel button:hover, #panel button.play { background:rgb(${SHU}); color:#fff; border-color:rgb(${SHU}); }
-    #panel button:focus-visible, #panel select:focus-visible, #panel input:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }`);
+    #panel .seg input:checked + span { background:var(--ink); color:#efe4cc; }
+    #panel .seg input:focus-visible + span { outline:2px solid var(--shu); outline-offset:-3px; }
+    #panel button:hover, #panel button.play { background:var(--shu); color:#fff; border-color:var(--shu); }
+    #panel button:focus-visible, #panel select:focus-visible, #panel input:focus-visible { outline:2px solid var(--shu); outline-offset:2px; }`);
   css.parent(document.head);
   buildLearn();
   // 止まっている間にパネルを触ったら、1 枚描き直して変化を見せる
@@ -170,7 +176,7 @@ function selectLearnTab(n, focus = false) {
   const tabs = selectAll('#learn [role=tab]'), panels = selectAll('#learn [role=tabpanel]');
   tabs.forEach((t, i) => { t.attribute('aria-selected', String(i === n)); t.attribute('tabindex', i === n ? '0' : '-1'); });
   panels.forEach((p, i) => (i === n ? p.removeAttribute('hidden') : p.attribute('hidden', '')));
-  select('#learn .body').elt.scrollTop = 0;
+  learnDialog.elt.scrollTop = 0;
   if (focus) tabs[n].elt.focus();
 }
 
@@ -240,13 +246,20 @@ function draw() {
     stepBird(dt);
   }
 
+  const eaves = eaveLines();
+  syncDrops();
+  if (!paused) {
+    stepDrops(eaves);
+    stepPetals();
+  }
+
   image(backdrop, 0, 0); // 空・霞・地面・和紙は最初に一度だけ描いたものを貼る
   drawMoon();
   drawTitle();
-  drawWetGround();
+  drawWetGround(eaves);
   drawWeather();
   drawTower();
-  drawSnowCaps();
+  drawSnowCaps(eaves);
   drawGusts();
   perch = null;
   drawRings();
@@ -330,14 +343,19 @@ function stepYears(dt) {
 }
 
 // --- 年輪 ----------------------------------------------------------------------
+// 雨の多い年は太く、雪の多い年・嵐の年は細る係数（addRing と丸窓の表示で共有する）
+function weatherGrowthFactor(rain, snow, storm) {
+  return 1.4 + rain * 2.2 - snow * 0.9 - storm * 0.5;
+}
+
 function addRing() {
   if (age >= MAX_AGE) return;
   age++;
   if (age === SHINBOKU_AGE) shinbokuAt = millis(); // ここから御神木。注連縄が張られる
   // 年輪は中心（髄）が最初の年で、樹皮のすぐ内側の形成層が毎年その外側に新しい輪を足す。
-  // 雨の多い年は太く、雪の多い年・嵐の年は細る（平均がほぼ 1 になる係数）。
   // 地震で傷んだ木は、その後の数年の成長が落ちる（growthDip）
-  const w = max(0.3, (1.4 + ui.rain.value() * 2.2 - ui.snow.value() * 0.9 - yearStorm * 0.5 + noise(age * 0.3) * 1.2) / 2.5) * (1 - growthDip);
+  const rain = ui.rain.value(), snow = ui.snow.value();
+  const w = max(0.3, (weatherGrowthFactor(rain, snow, yearStorm) + noise(age * 0.3) * 1.2) / 2.5) * (1 - growthDip);
   // 太るほど 1 年の輪は細くなる。目安の半径は 1 - exp(-年 / GROW_TAU) で、断面の縁へ近づき続ける。
   // 天候で太さは揺れるが、目安から離れすぎないよう少しずつ引き戻す。外周に輪が積み重ならない
   // 止めずに育ち続け、太るほど輪は細くなる。上限で止めると、その後の地震が輪に残らない
@@ -349,20 +367,21 @@ function addRing() {
   const cx = rings.width / 2, cy = rings.height / 2;
   // ひとつの地震で残す朱の輪は 1 本まで
   const scar = quakeRecorded ? 0 : constrain(yearQuake, 0, 3);
-  if (scar > 0.6) quakeRecorded = true;
-  growthDip = scar > 0.6 ? min(0.6, growthDip + scar * 0.15) : growthDip * 0.8;
+  const isScar = scar > SCAR_THRESHOLD;
+  if (isScar) quakeRecorded = true;
+  growthDip = isScar ? min(0.6, growthDip + scar * 0.15) : growthDip * 0.8;
   rings.noFill();
   // 晩材の帯：若い太い輪では、秋に締まった濃い部分を幅のある帯で描く
-  if (step > 0.5 && scar <= 0.6) {
+  if (step > 0.5 && !isScar) {
     rings.stroke(...LATEWOOD, 70);
     rings.strokeWeight(step * 0.45 * RS);
     ringPath(cx, cy, r - step * 0.2, 0);
   }
   // 晩材の境（濃い線）。輪が細い老木では線を淡くし、重なって真っ黒にならないようにする
-  rings.stroke(...(scar > 0.6 ? SHU : INK), scar > 0.6 ? 200 : map(step, 0.15, 1.2, 45, 120, true) * (0.4 + 1.6 * pow(noise(age * 0.07 + 50), 2)) + yearStorm * 40);
-  rings.strokeWeight((scar > 0.6 ? 1.3 : step < 0.5 ? 0.5 : 0.8) * RS);
+  rings.stroke(...(isScar ? SHU : INK), isScar ? 200 : map(step, 0.15, 1.2, 45, 120, true) * (0.4 + 1.6 * pow(noise(age * 0.07 + 50), 2)) + yearStorm * 40);
+  rings.strokeWeight((isScar ? 1.3 : step < 0.5 ? 0.5 : 0.8) * RS);
   ringPath(cx, cy, r, scar);
-  ringLog.push({ r, rain: ui.rain.value(), snow: ui.snow.value(), storm: yearStorm, scar, step });
+  ringLog.push({ r, rain, snow, storm: yearStorm, scar, step });
   ringR = r;
 }
 
@@ -371,7 +390,7 @@ function ringPath(cx, cy, r, scar) {
   rings.beginShape();
   for (let a = 0; a < TWO_PI; a += TWO_PI / 140) {
     const n = noise(cos(a) * 1.3 + 10, sin(a) * 1.3 + 10, r * 0.01);
-    const jag = scar > 0.6 ? (noise(a * 9, age) - 0.5) * scar * 1.2 : 0;
+    const jag = scar > SCAR_THRESHOLD ? (noise(a * 9, age) - 0.5) * scar * 1.2 : 0;
     const rr = r * (0.94 + n * 0.08) + jag;
     rings.vertex(cx + rr * RS * cos(a), cy + rr * RS * sin(a));
   }
@@ -487,6 +506,7 @@ function drawTree(cx, tr, h, top) {
 
   // 幹：根元が張り、枝分かれまで少しずつ細る。左が明るく右が暗い
   const ctx = drawingContext;
+  ctx.save();
   const grad = ctx.createLinearGradient(cx - tr, 0, cx + tr, 0);
   grad.addColorStop(0, `rgb(${BARK_LIGHT})`);
   grad.addColorStop(0.4, `rgb(${BARK})`);
@@ -502,6 +522,7 @@ function drawTree(cx, tr, h, top) {
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = `rgb(${INK})`; ctx.lineWidth = 1.4; ctx.stroke(); // 版画の墨線
+  ctx.restore();
   // 樹皮の縦の筋と、根元の苔
   const n = constrain(floor(tr / 4), 2, 18);
   noFill();
@@ -523,23 +544,24 @@ function drawTree(cx, tr, h, top) {
 
   // 手前の葉
   drawCanopy(cx + sway, ccy + ch * 0.08, cw * 0.92, ch * 0.9, 1, FOLIAGE);
-  // 梅の小枝：樹冠の左から一本突き出し、花を三つ付ける。鶯はこの枝先にとまる
-  if (age >= 25) {
-    // 樹冠の左の縁より外まで伸ばし、花と鶯が葉に埋もれないようにする
-    const bx = cx - cw * 0.4 + sway * 0.6, by = ccy + ch * 0.1;
-    const ex = cx - cw * 0.5 - 84 + sway, ey = by - 26;
-    stroke(...INK); strokeWeight(2.4); noFill();
-    bezier(bx, by, bx - 12, by - 2, ex + 10, ey + 6, ex, ey);
-    for (const u of [0.35, 0.62, 0.9]) {
-      const px = bezierPoint(bx, bx - 12, ex + 10, ex, u), py = bezierPoint(by, by - 2, ey + 6, ey, u) - 3;
-      noStroke(); fill(...UME);
-      stroke(...INK, 90); strokeWeight(0.5);
-      for (let k = 0; k < 5; k++) circle(px + cos(k * TWO_PI / 5) * 3, py + sin(k * TWO_PI / 5) * 3, 4.4);
-      noStroke();
-      fill(...SHU); circle(px, py, 1.6);
-    }
-    perch = { x: ex + 6, y: ey - 1 };
+  if (age >= 25) drawPlumTwig(cx, ccy, cw, ch, sway);
+}
+
+// 梅の小枝：樹冠の左から一本突き出し、花を三つ付ける。鶯はこの枝先にとまる
+function drawPlumTwig(cx, ccy, cw, ch, sway) {
+  // 樹冠の左の縁より外まで伸ばし、花と鶯が葉に埋もれないようにする
+  const bx = cx - cw * 0.4 + sway * 0.6, by = ccy + ch * 0.1;
+  const ex = cx - cw * 0.5 - 84 + sway, ey = by - 26;
+  stroke(...INK); strokeWeight(2.4); noFill();
+  bezier(bx, by, bx - 12, by - 2, ex + 10, ey + 6, ex, ey);
+  for (const u of [0.35, 0.62, 0.9]) {
+    const px = bezierPoint(bx, bx - 12, ex + 10, ex, u), py = bezierPoint(by, by - 2, ey + 6, ey, u) - 3;
+    fill(...UME); stroke(...INK, 90); strokeWeight(0.5);
+    for (let k = 0; k < 5; k++) circle(px + cos(k * TWO_PI / 5) * 3, py + sin(k * TWO_PI / 5) * 3, 4.4);
+    noStroke();
+    fill(...SHU); circle(px, py, 1.6);
   }
+  perch = { x: ex + 6, y: ey - 1 };
 }
 
 // 樹冠：墨の輪郭をもつ平らな葉のかたまりを、楕円の範囲に散らして重ねる（浮世絵の葉の描き方）
@@ -590,9 +612,9 @@ function drawInset() {
   circle(x, y, r * 2 + 8);
   noStroke(); fill(...INK, 190); textAlign(CENTER, TOP); textSize(14);
   text(age < 1 ? '輪切りの見立て　まだ輪は無い' : '胸の高さの輪切り　触れて読む', x, y + r + 10);
-  // いまの天気で、今年の輪がどうなるか。雨は太く、雪や嵐は細くする（addRing と同じ式の向き）
+  // いまの天気で、今年の輪がどうなるか。雨は太く、雪や嵐は細くする（addRing と同じ式）
   const rain = ui.rain.value(), snow = ui.snow.value(), storm = abs(ui.wind.value()) * (rain + snow);
-  const g = 1.4 + rain * 2.2 - snow * 0.9 - storm * 0.5;
+  const g = weatherGrowthFactor(rain, snow, storm);
   const why = g > 2.3 ? '太め（雨が多い）' : g < 1.1 ? (snow > storm ? '細め（雪で寒い）' : '細め（嵐）') : 'ふつう';
   fill(...(g < 1.1 ? SHU : INK), 200);
   text(`今年の輪：${why}`, x, y + r + 30);
@@ -646,8 +668,9 @@ function drawShimenawa(cx, rx, ry, y, p = 1) {
 // s は丸窓の拡大率（drawInset の戻り値）
 function readRingUnderPointer(s) {
   const inside = mouseX >= 0 && mouseX <= W && mouseY >= 0 && mouseY <= H;
-  const d = dist(mouseX, mouseY, INSET.x, INSET.y) / s; // 断面の中心からの距離（年輪の単位）
-  if (!inside || ringLog.length === 0 || d > ringR + 1 || dist(mouseX, mouseY, INSET.x, INSET.y) > INSET.r) { ringCard.hide(); return; }
+  const rawD = dist(mouseX, mouseY, INSET.x, INSET.y);
+  const d = rawD / s; // 断面の中心からの距離（年輪の単位）
+  if (!inside || ringLog.length === 0 || d > ringR + 1 || rawD > INSET.r) { hideRingCard(); return; }
   // 距離より外側にある最初の輪 = 指している輪
   let lo = 0, hi = ringLog.length - 1;
   while (lo < hi) { const m = (lo + hi) >> 1; if (ringLog[m].r < d) lo = m + 1; else hi = m; }
@@ -666,7 +689,7 @@ function readRingUnderPointer(s) {
   else showRingCard(k, ring, mouseX - 24, mouseY - 40);
 }
 
-// 虫眼鏡：3 倍の解像度で描いた年輪から指している場所を切り出し、丸窓の下に大きく見せる
+// 虫眼鏡：3 倍の解像度で描いた年輪から指している場所を切り出し、指先の真上に大きく見せる
 function drawLoupe(s, ring) {
   const LR = 70;
   const lx = mouseX, ly = mouseY - LR - 22; // 指先の真上。指している所から目を動かさずに読める
@@ -698,7 +721,7 @@ function describeYear(k, ring) {
   if (k === 1) lines.push('髄のすぐ外。この木が芽を出した最初の年の輪。');
   else if (k === age) lines.push('いちばん外側。今年、樹皮のすぐ内側の形成層がつくった輪。');
   else lines.push(`中心から数えて ${k} 本目。この外側に、より新しい輪が ${age - k} 本ある。`);
-  if (ring.scar > 0.6) lines.push('地震を受けた年（朱の輪）。傷んだ木は、この後の数年の輪が細くなる。');
+  if (ring.scar > SCAR_THRESHOLD) lines.push('地震を受けた年（朱の輪）。傷んだ木は、この後の数年の輪が細くなる。');
   if (ring.rain > 0.6) lines.push('雨の多い年。よく育ち、輪が太い。');
   if (ring.snow > 0.4) lines.push('雪の多い寒い年。育ちが鈍り、輪が細い。');
   if (ring.storm > 0.5) lines.push('嵐の年。風雨に耐えて輪が細る。');
@@ -706,20 +729,35 @@ function describeYear(k, ring) {
   return lines;
 }
 
+function hideRingCard() {
+  if (!ringCard || !ringCardState.key) return;
+  ringCard.hide();
+  ringCardState.key = '';
+  ringCardState.left = null;
+  ringCardState.top = null;
+}
+
 // 札は rightX（キャンバスの座標）に右端をそろえて出す。画面からはみ出すときは内側へ寄せる
 function showRingCard(k, ring, rightX, topY) {
   // 先頭の canvas は裏で使う描き置き（大きさ 0）のことがあるので、表示しているキャンバスそのものを測る
   const box = drawingContext.canvas.getBoundingClientRect();
   const scale = box.width / W;
-  ringCard.html('');
-  createElement('strong', `${kanjiNumber(k)}年目の輪`).parent(ringCard);
-  for (const t of describeYear(k, ring)) createP(t).parent(ringCard);
-  // 札は丸窓（と虫眼鏡）の上に出し、輪を隠さない
-  ringCard.show();
+  const key = `${k}:${age}`;
+  if (ringCardState.key !== key) {
+    ringCard.html('');
+    createElement('strong', `${kanjiNumber(k)}年目の輪`).parent(ringCard);
+    for (const t of describeYear(k, ring)) createP(t).parent(ringCard);
+    ringCard.show();
+    ringCardState.key = key;
+  }
   const cw = ringCard.elt.offsetWidth, chh = ringCard.elt.offsetHeight;
-  const left = constrain(box.left + rightX * scale - cw, 4, window.innerWidth - cw - 4);
-  const top = constrain(box.top + topY * scale, 4, window.innerHeight - chh - 4);
-  ringCard.position(left + window.scrollX, top + window.scrollY);
+  const left = Math.round(constrain(box.left + rightX * scale - cw, 4, window.innerWidth - cw - 4) + window.scrollX);
+  const top = Math.round(constrain(box.top + topY * scale, 4, window.innerHeight - chh - 4) + window.scrollY);
+  if (ringCardState.left !== left || ringCardState.top !== top) {
+    ringCard.position(left, top);
+    ringCardState.left = left;
+    ringCardState.top = top;
+  }
 }
 
 // 止まっている間も、断面の上でマウスを動かしたら読めるようにする
@@ -755,50 +793,51 @@ function figDisk(cx, cy, R, radii, { red = -1, grow = true, bark = true } = {}) 
   });
   return g;
 }
-function learnFigure(title) {
-  const t = (s) => title.startsWith(s);
-  if (t('各層は')) return svgFig(figLayers());
-  if (t('心柱は')) return svgFig(figLayers('rgba(218,196,156,0.55)') +
-    `<line class="pole" x1="48" y1="62" x2="48" y2="6" stroke="${FC.shu}" stroke-width="2.2"/>`);
-  if (t('木組み')) return svgFig(`
-    <g class="slide"><path d="M6 28 H46 V32 H58 V40 H46 V44 H6 Z" fill="${FC.ko}" stroke="${FC.ink}"/></g>
-    <path d="M50 22 H90 V50 H50 V40 H60 V32 H50 Z" fill="#c9a97c" stroke="${FC.ink}"/>
-    <g class="rub" stroke="${FC.shu}" stroke-width="1"><line x1="53" y1="16" x2="56" y2="12"/><line x1="58" y1="17" x2="62" y2="13"/><line x1="53" y1="56" x2="56" y2="60"/></g>`);
-  if (t('深い軒')) {
-    let g = `<rect x="0" y="62" width="14" height="6" fill="${FC.ai}" opacity="0.35"/><rect x="82" y="62" width="14" height="6" fill="${FC.ai}" opacity="0.35"/>
-      <line x1="0" y1="62" x2="96" y2="62" stroke="${FC.ink}"/>
-      <rect x="36" y="28" width="4" height="34" fill="${FC.shu}"/><rect x="56" y="28" width="4" height="34" fill="${FC.shu}"/>
-      <path d="M14 27 Q48 6 82 27 L78 29 Q48 13 18 29 Z" fill="${FC.ink}"/>`;
-    for (const [x, d] of [[6, 0], [90, 0.5], [3, 1.0]]) g += `<line class="fall" x1="${x}" y1="0" x2="${x - 1}" y2="6" stroke="${FC.ai}" style="animation-delay:${d}s"/>`;
-    for (const [x, d] of [[30, 0.2], [48, 0.7], [64, 0.4]]) g += `<line class="stop" x1="${x}" y1="0" x2="${x - 1}" y2="6" stroke="${FC.ai}" style="animation-delay:${d}s"/>`;
-    for (const [x, d] of [[15, 0.3], [81, 0.9]]) g += `<line class="drip" x1="${x}" y1="28" x2="${x}" y2="33" stroke="${FC.shu}" style="animation-delay:${d}s"/>`;
-    return svgFig(g);
+function learnFigure(figKey) {
+  switch (figKey) {
+    case 'layers': return svgFig(figLayers());
+    case 'core': return svgFig(figLayers('rgba(218,196,156,0.55)') +
+      `<line class="pole" x1="48" y1="62" x2="48" y2="6" stroke="${FC.shu}" stroke-width="2.2"/>`);
+    case 'joinery': return svgFig(`
+      <g class="slide"><path d="M6 28 H46 V32 H58 V40 H46 V44 H6 Z" fill="${FC.ko}" stroke="${FC.ink}"/></g>
+      <path d="M50 22 H90 V50 H50 V40 H60 V32 H50 Z" fill="#c9a97c" stroke="${FC.ink}"/>
+      <g class="rub" stroke="${FC.shu}" stroke-width="1"><line x1="53" y1="16" x2="56" y2="12"/><line x1="58" y1="17" x2="62" y2="13"/><line x1="53" y1="56" x2="56" y2="60"/></g>`);
+    case 'eaves': {
+      let g = `<rect x="0" y="62" width="14" height="6" fill="${FC.ai}" opacity="0.35"/><rect x="82" y="62" width="14" height="6" fill="${FC.ai}" opacity="0.35"/>
+        <line x1="0" y1="62" x2="96" y2="62" stroke="${FC.ink}"/>
+        <rect x="36" y="28" width="4" height="34" fill="${FC.shu}"/><rect x="56" y="28" width="4" height="34" fill="${FC.shu}"/>
+        <path d="M14 27 Q48 6 82 27 L78 29 Q48 13 18 29 Z" fill="${FC.ink}"/>`;
+      for (const [x, d] of [[6, 0], [90, 0.5], [3, 1.0]]) g += `<line class="fall" x1="${x}" y1="0" x2="${x - 1}" y2="6" stroke="${FC.ai}" style="animation-delay:${d}s"/>`;
+      for (const [x, d] of [[30, 0.2], [48, 0.7], [64, 0.4]]) g += `<line class="stop" x1="${x}" y1="0" x2="${x - 1}" y2="6" stroke="${FC.ai}" style="animation-delay:${d}s"/>`;
+      for (const [x, d] of [[15, 0.3], [81, 0.9]]) g += `<line class="drip" x1="${x}" y1="28" x2="${x}" y2="33" stroke="${FC.shu}" style="animation-delay:${d}s"/>`;
+      return svgFig(g);
+    }
+    case 'aging': return svgFig(`
+      <path d="M12 6 V60 H92" fill="none" stroke="${FC.ink}"/>
+      <text x="14" y="10" font-size="9.5" fill="${FC.ink}">強さ</text><text x="92" y="66" font-size="9.5" fill="${FC.ink}" text-anchor="end">年月</text>
+      <path class="draw" pathLength="100" d="M12 42 C28 24, 44 18, 56 20 S78 30, 92 36" fill="none" stroke="${FC.shu}" stroke-width="1.8"/>`);
+    case 'living': return svgFig(
+      figDisk(26, 32, 20, [5, 9, 13, 17], { grow: true }) +
+      figDisk(70, 32, 18, [5, 9, 13], { grow: false, bark: false }) +
+      `<text x="26" y="68" font-size="9.5" text-anchor="middle" fill="${FC.ink}">立つ木</text><text x="70" y="68" font-size="9.5" text-anchor="middle" fill="${FC.ink}">切り株</text>`);
+    case 'pith': return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 20, 24, 28]));
+    case 'woodband': {
+      let g = '';
+      for (let i = 0; i < 6; i++) g += `<rect x="${8 + i * 14}" y="16" width="11" height="34" fill="${FC.ko}"/><rect x="${19 + i * 14}" y="16" width="3" height="34" fill="${FC.late}"/>`;
+      return svgFig(`<g class="wipe">${g}</g><text x="13" y="62" font-size="9.5" fill="${FC.ink}">早材</text><text x="20" y="11" font-size="9.5" fill="${FC.ink}">晩材</text>
+        <line x1="20.5" y1="13" x2="20.5" y2="17" stroke="${FC.ink}" stroke-width="0.6"/>`);
+    }
+    case 'narrow': return svgFig(figDisk(48, 36, 34, [5, 12, 18, 23, 27, 30, 32, 33]));
+    case 'climate': return svgFig(figDisk(48, 36, 32, [4, 11, 13, 20, 22, 23, 29, 31]));
+    case 'horyuji': return svgFig(figDisk(40, 34, 28, [4, 8, 11, 14, 17, 20, 23, 26], { red: 7 }) +
+      `<text x="72" y="40" font-size="9.5" fill="${FC.shu}">594</text>`);
+    case 'scar': return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 17.5, 19, 23, 27], { red: 3 }));
+    default: return '';
   }
-  if (t('古い木')) return svgFig(`
-    <path d="M12 6 V60 H92" fill="none" stroke="${FC.ink}"/>
-    <text x="14" y="10" font-size="9.5" fill="${FC.ink}">強さ</text><text x="92" y="66" font-size="9.5" fill="${FC.ink}" text-anchor="end">年月</text>
-    <path class="draw" pathLength="100" d="M12 42 C28 24, 44 18, 56 20 S78 30, 92 36" fill="none" stroke="${FC.shu}" stroke-width="1.8"/>`);
-  if (t('伐った木')) return svgFig(
-    figDisk(26, 32, 20, [5, 9, 13, 17], { grow: true }) +
-    figDisk(70, 32, 18, [5, 9, 13], { grow: false, bark: false }) +
-    `<text x="26" y="68" font-size="9.5" text-anchor="middle" fill="${FC.ink}">立つ木</text><text x="70" y="68" font-size="9.5" text-anchor="middle" fill="${FC.ink}">切り株</text>`);
-  if (t('中心が')) return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 20, 24, 28]));
-  if (t('1 年は')) {
-    let g = '';
-    for (let i = 0; i < 6; i++) g += `<rect x="${8 + i * 14}" y="16" width="11" height="34" fill="${FC.ko}"/><rect x="${19 + i * 14}" y="16" width="3" height="34" fill="${FC.late}"/>`;
-    return svgFig(`<g class="wipe">${g}</g><text x="13" y="62" font-size="9.5" fill="${FC.ink}">早材</text><text x="20" y="11" font-size="9.5" fill="${FC.ink}">晩材</text>
-      <line x1="20.5" y1="13" x2="20.5" y2="17" stroke="${FC.ink}" stroke-width="0.6"/>`);
-  }
-  if (t('太るほど')) return svgFig(figDisk(48, 36, 34, [5, 12, 18, 23, 27, 30, 32, 33]));
-  if (t('輪の太さ')) return svgFig(figDisk(48, 36, 32, [4, 11, 13, 20, 22, 23, 29, 31]));
-  if (t('法隆寺')) return svgFig(figDisk(40, 34, 28, [4, 8, 11, 14, 17, 20, 23, 26], { red: 7 }) +
-    `<text x="72" y="40" font-size="9.5" fill="${FC.shu}">594</text>`);
-  if (t('傷は')) return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 17.5, 19, 23, 27], { red: 3 }));
-  return '';
 }
 
-// 開いて読める説明の欄を 1 つ作る。facts は [見出し, 本文]、sources は [名前, URL]
-// 五重塔と年輪は並列なので、ダイアログの中でタブにする。tabs にタブを足し、本文は選んだものだけ見せる
+// 開いて読める説明の欄を 1 つ作る。facts は [見出し, 本文, 図のキー（任意）]、sources は [名前, URL]
+// 五重塔・年輪・開発技術は並列なので、ダイアログの中でタブにする。tabs にタブを足し、本文は選んだものだけ見せる
 function learnSection(body, tabs, label, title, facts, sources) {
   const n = tabs.elt.children.length, first = n === 0;
   const sec = createElement('section').parent(body).id(`learn-panel-${n}`)
@@ -809,9 +848,9 @@ function learnSection(body, tabs, label, title, facts, sources) {
   tab.mousePressed(() => selectLearnTab(n));
   createElement('h2', title).parent(sec);
   const dl = createElement('dl').parent(sec);
-  for (const [t, d] of facts) {
+  for (const [t, d, figKey] of facts) {
     const pair = createDiv('').parent(dl); // 見出しと本文を組にして、同じ列に並べる
-    const fig = learnFigure(t);
+    const fig = figKey ? learnFigure(figKey) : '';
     if (fig) {
       // 内容をそのまま動かして見せる小さな図。押すと動く／止まる（動きを減らす設定のときの再生にも使う）
       pair.class('has-fig');
@@ -825,7 +864,7 @@ function learnSection(body, tabs, label, title, facts, sources) {
   for (const [label, url] of sources) createA(url, label, '_blank').parent(src).attribute('rel', 'noopener');
 }
 
-// 学べる説明。パネルの下に、開いて読める欄を置く（五重塔・年輪）
+// 解説ダイアログと年輪の札を作る（五重塔・年輪・開発技術）
 function buildLearn() {
   ringCard = createDiv('').id('ringcard').hide();
 
@@ -835,11 +874,15 @@ function buildLearn() {
   createElement('h1', '解説').parent(head).id('learn-title');
   createButton('閉じる').parent(head).class('close').mousePressed(() => learnDialog.elt.close());
   const tabs = createDiv('').parent(head).class('tabs').attribute('role', 'tablist').attribute('aria-label', '解説の種類');
-  // 左右の矢印キーでタブを移る（タブの決まった操作）
+  // 左右の矢印・Home・End キーでタブを移る（WAI-ARIA Tabs の標準操作）
   tabs.elt.addEventListener('keydown', (e) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     const all = [...tabs.elt.children], i = all.indexOf(document.activeElement);
-    selectLearnTab((i + (e.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length, true);
+    if (i < 0) return;
+    if (e.key === 'ArrowRight') selectLearnTab((i + 1) % all.length, true);
+    else if (e.key === 'ArrowLeft') selectLearnTab((i + all.length - 1) % all.length, true);
+    else if (e.key === 'Home') selectLearnTab(0, true);
+    else if (e.key === 'End') selectLearnTab(all.length - 1, true);
+    else return;
     e.preventDefault();
   });
   const body = createDiv('').parent(learnDialog).class('body');
@@ -858,11 +901,11 @@ function buildLearn() {
 
   // 五重塔のしくみ：地震と雨・雪・風への強さ。作品で単純化したところは、そうと書く
   learnSection(body, tabs, '五重塔のしくみ', '地震と雨・雪・風への強さ', [
-    ['各層は積み重ねてあるだけ', '五重塔の各層は一つずつ独立して組まれ、下の層の上に載っている。一階から最上階までを貫く通し柱は無い。地震では各層が別々に、少しずつずれながら揺れる。'],
-    ['心柱は塔に縛られていない', '塔の真ん中を貫く心柱は、多くの塔で各層と構造的に切り離され、上の方でわずかに接するだけになっている。地震では心柱と各層が別々に揺れ、その動きの食い違いが塔全体の揺れを抑えると考えられている。仕組みの詳しいところは、実際の塔の観測や模型の振動実験で今も調べられている。'],
-    ['木組みは揺れを吸う', '継手・仕口で木と木を組んだ接合部は、揺れると擦れ合い、少しずつめり込みながら力を受け流す。釘や金物で硬く固めた建物は、しなる余地が少ないぶん、同じ揺れで接合部や部材に力が集まりやすい。'],
-    ['深い軒は雨から木を守る', '屋根を柱から大きく張り出すと、雨が柱や壁にかかりにくくなる。木は濡れたままだと腐りやすいので、雨をかけないこと、濡れてもすぐ乾くことが長持ちにつながる。反りのある屋根は、雨や雪解けの水を軒先へ流して落とす。'],
-    ['古い木はすぐには弱らない', '木材は伐ってから数百年は強さが上がり、その後ゆるやかに下がるとされる。ただし樹種によって違い、古い材の強さはまだ十分には分かっていない。'],
+    ['各層は積み重ねてあるだけ', '五重塔の各層は一つずつ独立して組まれ、下の層の上に載っている。一階から最上階までを貫く通し柱は無い。地震では各層が別々に、少しずつずれながら揺れる。', 'layers'],
+    ['心柱は塔に縛られていない', '塔の真ん中を貫く心柱は、多くの塔で各層と構造的に切り離され、上の方でわずかに接するだけになっている。地震では心柱と各層が別々に揺れ、その動きの食い違いが塔全体の揺れを抑えると考えられている。仕組みの詳しいところは、実際の塔の観測や模型の振動実験で今も調べられている。', 'core'],
+    ['木組みは揺れを吸う', '継手・仕口で木と木を組んだ接合部は、揺れると擦れ合い、少しずつめり込みながら力を受け流す。釘や金物で硬く固めた建物は、しなる余地が少ないぶん、同じ揺れで接合部や部材に力が集まりやすい。', 'joinery'],
+    ['深い軒は雨から木を守る', '屋根を柱から大きく張り出すと、雨が柱や壁にかかりにくくなる。木は濡れたままだと腐りやすいので、雨をかけないこと、濡れてもすぐ乾くことが長持ちにつながる。反りのある屋根は、雨や雪解けの水を軒先へ流して落とす。', 'eaves'],
+    ['古い木はすぐには弱らない', '木材は伐ってから数百年は強さが上がり、その後ゆるやかに下がるとされる。ただし樹種によって違い、古い材の強さはまだ十分には分かっていない。', 'aging'],
     ['この作品での表し方', '五つの層をばねでつなぎ、毎フレーム揺れを計算している。木組みはやわらかく擦れて揺れを吸うばね、釘は硬く揺れを吸わないばねとして、層の間のずれが大きいと傷みが積もる。心柱は各層を全体の平均へ引き寄せる力として足している。風は塔を横から押す力、雨や雪は軒で受けて外へ流す粒として描いている。実際の塔の揺れ方をそのまま再現したものではない。'],
   ], [
     ['国土交通省 観光庁 多言語解説文（五重塔）', 'https://www.mlit.go.jp/tagengo-db/common/001553333.pdf'],
@@ -873,13 +916,13 @@ function buildLearn() {
   ]);
 
   learnSection(body, tabs, '年輪のしくみ', '木が一年ずつ刻むもの', [
-    ['伐った木は年輪が増えない', '年輪をつくる形成層は、生きている木の樹皮のすぐ内側にしかない。伐った丸太や切り株は、ほとんどの場合もう太らない。この作品で断面を丸窓に描いているのは、立っている木の幹を輪切りにしたらこう見える、という見立てだから。'],
-    ['中心がいちばん古い', '年輪は、樹皮のすぐ内側にある形成層が毎年つくる。新しい木の層は古い層の外側に重なるので、中心（髄）が最初の年で、外側ほど新しい。'],
-    ['1 年は淡い帯と濃い線でできている', '春に育つ部分（早材）は細胞が大きく壁が薄いので淡い。夏から秋に育つ部分（晩材）は細胞が小さく壁が厚いので濃い。この濃い部分の外側が 1 年の区切りになる。'],
-    ['太るほど 1 年の輪は細くなる', '幹の周りが長くなるほど、同じだけ育っても輪の幅は薄く延ばされる。千年を超える木の外側の輪は、1 ミリに満たないこともある。'],
-    ['輪の太さは、その年の天気の記録', '暖かく雨の多い年は太く、寒い年や乾いた年は細い。同じ地域の木は太さの並びが似るので、年代のわかった木と照らし合わせると、木が伐られた年まで決められる（年輪年代法）。'],
-    ['法隆寺五重塔の心柱は 594 年に伐られた', '解体修理のときに切り取られた心柱（ヒノキ）の円盤を年輪年代法で調べ、伐採年は 594 年とされた。ただし塔のほかの部材は 7 世紀後半のもので、建立の年代はまだ議論がある。'],
-    ['傷は輪に残る', '地震や嵐で傷んだ木は、その後の数年の輪が細くなったり乱れたりすることがある。この作品の朱の輪は、その跡を目に見えるように強めたもの。'],
+    ['伐った木は年輪が増えない', '年輪をつくる形成層は、生きている木の樹皮のすぐ内側にしかない。伐った丸太や切り株は、ほとんどの場合もう太らない。この作品で断面を丸窓に描いているのは、立っている木の幹を輪切りにしたらこう見える、という見立てだから。', 'living'],
+    ['中心がいちばん古い', '年輪は、樹皮のすぐ内側にある形成層が毎年つくる。新しい木の層は古い層の外側に重なるので、中心（髄）が最初の年で、外側ほど新しい。', 'pith'],
+    ['1 年は淡い帯と濃い線でできている', '春に育つ部分（早材）は細胞が大きく壁が薄いので淡い。夏から秋に育つ部分（晩材）は細胞が小さく壁が厚いので濃い。この濃い部分の外側が 1 年の区切りになる。', 'woodband'],
+    ['太るほど 1 年の輪は細くなる', '幹の周りが長くなるほど、同じだけ育っても輪の幅は薄く延ばされる。千年を超える木の外側の輪は、1 ミリに満たないこともある。', 'narrow'],
+    ['輪の太さは、その年の天気の記録', '暖かく雨の多い年は太く、寒い年や乾いた年は細い。同じ地域の木は太さの並びが似るので、年代のわかった木と照らし合わせると、木が伐られた年まで決められる（年輪年代法）。', 'climate'],
+    ['法隆寺五重塔の心柱は 594 年に伐られた', '解体修理のときに切り取られた心柱（ヒノキ）の円盤を年輪年代法で調べ、伐採年は 594 年とされた。ただし塔のほかの部材は 7 世紀後半のもので、建立の年代はまだ議論がある。', 'horyuji'],
+    ['傷は輪に残る', '地震や嵐で傷んだ木は、その後の数年の輪が細くなったり乱れたりすることがある。この作品の朱の輪は、その跡を目に見えるように強めたもの。', 'scar'],
   ], [
     ['長野県林業総合センター「年輪の話」', 'https://www.pref.nagano.lg.jp/ringyosogo/joho/kids/nenrin.html'],
     ['北海道立総合研究機構 林産試験場の資料', 'https://www.hro.or.jp/upload/9781/8910-4.pdf'],
@@ -908,21 +951,21 @@ function buildLearn() {
   ]);
 
   createElement('style', `
-    #ringcard { position:absolute; width:280px; padding:10px 12px; background:rgb(${KASUMI}); color:rgb(${INK});
-      border:1.5px solid rgb(${INK}); box-shadow:3px 3px 0 rgba(${INK},0.25); font:14px/1.6 "Hiragino Mincho ProN","Yu Mincho",serif;
+    #ringcard { position:absolute; width:280px; padding:10px 12px; background:var(--kasumi); color:var(--ink);
+      border:1.5px solid var(--ink); box-shadow:3px 3px 0 rgba(${INK},0.25); font:14px/1.6 var(--mincho);
       pointer-events:none; z-index:2; }
-    #ringcard strong { display:block; font-size:16px; font-weight:normal; color:rgb(${SHU}); margin-bottom:2px; }
+    #ringcard strong { display:block; font-size:16px; font-weight:normal; color:var(--shu); margin-bottom:2px; }
     #ringcard p { margin:0; }
     #stage { position:relative; line-height:0; }
     #learn-open { position:absolute; right:6.7%; top:3.6%; display:flex; flex-direction:column; align-items:center; gap:4px;
-      padding:8px 6px 10px; background:rgb(${KASUMI}); color:rgb(${INK}); border:1.5px solid rgb(${INK});
-      outline:0.8px solid rgb(${INK}); outline-offset:-5px; cursor:pointer; font:15px/1.2 "Hiragino Mincho ProN","Yu Mincho",serif; }
+      padding:8px 6px 10px; background:var(--kasumi); color:var(--ink); border:1.5px solid var(--ink);
+      outline:0.8px solid var(--ink); outline-offset:-5px; cursor:pointer; font:15px/1.2 var(--mincho); }
     #learn-open svg { width:22px; height:26px; }
     #learn-open span { writing-mode:vertical-rl; letter-spacing:0.15em; }
-    #learn-open:hover { color:rgb(${SHU}); }
-    #learn-open:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:3px; }
+    #learn-open:hover { color:var(--shu); }
+    #learn-open:focus-visible { outline:2px solid var(--shu); outline-offset:3px; }
     #learn { width:min(980px, calc(100vw - 32px)); max-height:min(86vh, 900px); padding:0; box-sizing:border-box;
-      background:#d6c8a8; color:#2a2522; border:1.5px solid rgb(${INK}); font:14px/1.8 "Hiragino Mincho ProN","Yu Mincho",serif; }
+      background:#d6c8a8; color:#2a2522; border:1.5px solid var(--ink); font:14px/1.8 var(--mincho); }
     #learn::backdrop { background:rgba(36, 28, 22, 0.55); }
     #learn .head { position:sticky; top:0; display:flex; justify-content:space-between; align-items:center;
       padding:10px 18px; background:#cdbf9f; border-bottom:1px solid rgba(${INK},0.4); }
@@ -930,15 +973,15 @@ function buildLearn() {
     #learn .tabs { display:flex; gap:0; margin:0 auto 0 28px; align-self:flex-end; margin-bottom:-11px; }
     #learn [role=tab] { font:inherit; font-size:15px; padding:6px 18px 8px; background:transparent; color:#5e5244;
       border:1px solid transparent; border-bottom:none; cursor:pointer; }
-    #learn [role=tab][aria-selected=true] { background:#d6c8a8; color:rgb(${INK}); border-color:rgba(${INK},0.4); }
-    #learn [role=tab]:hover { color:rgb(${SHU}); }
-    #learn [role=tab]:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:-3px; }
+    #learn [role=tab][aria-selected=true] { background:#d6c8a8; color:var(--ink); border-color:rgba(${INK},0.4); }
+    #learn [role=tab]:hover { color:var(--shu); }
+    #learn [role=tab]:focus-visible { outline:2px solid var(--shu); outline-offset:-3px; }
     #learn .head button.close { order:3; font:inherit; padding:2px 12px; background:#e2d6ba; border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
-    #learn .head button.close:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
+    #learn .head button.close:focus-visible { outline:2px solid var(--shu); outline-offset:2px; }
     #learn .body { padding:4px 18px 18px; }
     #learn h2 { font-size:14px; font-weight:normal; color:#5e5244; margin:14px 0 0; }
     #learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(400px, 1fr)); /* 図が付くので 2 列にして本文の幅を確保する */ gap:4px 28px; margin:6px 0 4px; }
-    #learn dt { color:rgb(${SHU}); margin-top:8px; }
+    #learn dt { color:var(--shu); margin-top:8px; }
     #learn dd { margin:0; }
     #learn dl > div.has-fig { display:grid; grid-template-columns:144px 1fr; grid-template-rows:auto 1fr; column-gap:14px; align-items:start; } /* 図の高さで見出しの行が伸びないように */
     #learn .has-fig .fig { grid-row:span 2; margin-top:12px; cursor:pointer; }
@@ -974,8 +1017,33 @@ function buildLearn() {
 
 // --- 五重塔 ----------------------------------------------------------------------
 function drawTower() {
-  const baseX = TOWER_X, groundY = TOWER_BASE, sh = STORY_H;
-  // 基壇：石を積んだ台。塔はこの上に載り、台ごと地面の帯の中に据わる。地震では台ごと揺れる
+  const baseX = TOWER_X, groundY = TOWER_BASE, fall = tower.fallen;
+  drawPlinth(baseX, groundY);
+  let prevX = ground.x;
+  for (let i = 0; i < STORIES; i++) {
+    drawStory(i, baseX, groundY, prevX, fall);
+    prevX = tower.x[i];
+  }
+  drawSpire(baseX, groundY, fall);
+  // 心柱（透かして見せる）
+  if (ui.core.checked()) {
+    stroke(...SHU, 120); strokeWeight(5);
+    noFill();
+    beginShape();
+    vertex(baseX + ground.x, groundY);
+    for (let i = 0; i < STORIES; i++) vertex(baseX + tower.x[i], groundY - (i + 1) * STORY_H + fall * i * STORY_H * 0.55);
+    endShape();
+  }
+  // 状態
+  noStroke(); fill(...INK); textAlign(LEFT); textSize(14);
+  const state = tower.fallen > 0 ? '倒壊' : tower.damage > 0.05 ? `傷み ${(tower.damage * 100).toFixed(0)}%` : '健在';
+  text(`五重塔：${state}`, 40, 690);
+  fill(...INK, 150);
+  text('塔の上を左右にドラッグすると地面を揺らせる', 200, 690);
+}
+
+// 基壇：石を積んだ台。塔はこの上に載り、台ごと地面の帯の中に据わる。地震では台ごと揺れる
+function drawPlinth(baseX, groundY) {
   const bx = baseX + ground.x, bw2 = 100, bh = 16, bdx = 34, bdy = -18;
   noStroke(); fill(...INK, 40); // 地面に落ちる影（光は左上から）
   ellipse(bx + 60 + tower.x[STORIES - 1] * 0.3, groundY + bh + 4, 330, 18);
@@ -989,108 +1057,94 @@ function drawTower() {
   // 切石の目地
   stroke(...INK, 110); strokeWeight(0.8);
   for (let jx = bx - bw2 + 28; jx < bx + bw2; jx += 28) line(jx, groundY, jx, groundY + bh);
+}
 
-  const fall = tower.fallen;
-  let prevX = ground.x;
-  for (let i = 0; i < STORIES; i++) {
-    const x = tower.x[i];
-    const tilt = atan2(x - prevX, sh) + fall * (i + 1) * 0.12;
-    const y = groundY - i * sh + fall * i * sh * 0.55;
-    const bw = storyWidth(i), ew = bw * 1.9;
-    push();
-    translate(baseX + x, y);
-    rotate(tilt);
-    // 立体：右奥へ下がる側面。光は左上から当たるので、側面は陰になる
-    const dx = bw * 0.22, dy = -bw * 0.12;
-    noStroke();
-    fill(...INK, 70);
-    quad(bw / 2, -sh + 26, bw / 2 + dx, -sh + 26 + dy, bw / 2 + dx, dy, bw / 2, 0);
-    fill(...SHU_DARK);
-    quad(bw / 2 + dx - 6, -sh + 26 + dy, bw / 2 + dx, -sh + 26 + dy, bw / 2 + dx, dy, bw / 2 + dx - 6, dy);
-    // 正面の壁（塊に見せる）と柱（朱）
-    // 平らな塗りに墨の輪郭線（浮世絵の主版）
-    stroke(...INK); strokeWeight(1.2);
-    fill(...WALL);
-    rect(-bw / 2, -sh + 26, bw, sh - 26);
-    fill(...SHU);
-    rect(-bw / 2, -sh + 26, 8, sh - 26);
-    rect(bw / 2 - 8, -sh + 26, 8, sh - 26);
-    // 高欄（二層目から上）：縁の手すりと束
-    if (i > 0) {
-      strokeWeight(1);
-      line(-bw / 2 - 10, -8, bw / 2 + 10, -8);
-      for (let px = -bw / 2 - 10; px <= bw / 2 + 10; px += 10) line(px, -8, px, -1);
-    }
-    // 組物：軒を支える斗栱を、軒下に並ぶ小さな升で見せる
-    fill(...WALL); strokeWeight(0.8);
-    for (let kx = -bw / 2 - 6; kx < bw / 2 + 2; kx += 11) rect(kx, -sh + 26, 8, 5);
-    // 貫
-    stroke(...INK); strokeWeight(1);
-    line(-bw / 2, -sh * 0.45, bw / 2, -sh * 0.45);
-    // 屋根の上面：前の稜線から奥へ。正面より淡い墨で、面の向きの違いを出す
-    noStroke();
-    fill(...ROOF_TOP);
-    quad(-ew / 2, -sh + 16, 0, -sh + 4, dx, -sh + 4 + dy * 1.6, ew / 2 + dx, -sh + 16 + dy);
-    quad(0, -sh + 4, ew / 2, -sh + 16, ew / 2 + dx, -sh + 16 + dy, dx, -sh + 4 + dy * 1.6);
-    // 屋根：反りのある深い軒
-    fill(...INK);
-    beginShape();
-    // p5 2.x で bezierVertex の引数が変わったため、反りの点は bezierPoint で自前に打つ
-    for (let s = 0; s <= 10; s++) {
-      const u = s / 10;
-      vertex(bezierPoint(-ew / 2, -ew / 4, -bw / 3, 0, u), bezierPoint(-sh + 16, -sh + 24, -sh + 14, -sh + 4, u));
-    }
-    for (let s = 1; s <= 10; s++) {
-      const u = s / 10;
-      vertex(bezierPoint(0, bw / 3, ew / 4, ew / 2, u), bezierPoint(-sh + 4, -sh + 14, -sh + 24, -sh + 16, u));
-    }
-    vertex(ew / 2 - 6, -sh + 26);
-    vertex(-ew / 2 + 6, -sh + 26);
-    endShape(CLOSE);
-    // 瓦の筋：屋根の上面に、奥へ向かう平行線を刻む
-    stroke(...INK, 120); strokeWeight(0.8);
-    for (let tx = -ew / 2 + 10; tx < ew / 2; tx += 7) {
-      const fy = -sh + 16 - (1 - abs(tx) / (ew / 2)) * 11;
-      line(tx, fy, tx + dx * 0.9, fy + dy * 0.9 - (1 - abs(tx) / (ew / 2)) * 3);
-    }
-    noStroke();
-    // 垂木の小口：軒先に並ぶ小さな明るい点で、軒の厚みを見せる
-    fill(...PAPER, 150);
-    for (let rx = -ew / 2 + 14; rx < ew / 2 - 12; rx += 9) rect(rx, -sh + 22, 3, 2);
-    // 傷み：ひび
-    if (tower.damage > 0.2) {
-      stroke(...SHU, 255 * tower.damage); strokeWeight(1.5);
-      line(-bw / 3, -sh * 0.3, -bw / 6, -sh * 0.1);
-      line(bw / 4, -sh * 0.6, bw / 10, -sh * 0.35);
-    }
-    pop();
-    prevX = x;
+// 1 層分の壁・柱・高欄・組物・屋根を描く
+function drawStory(i, baseX, groundY, prevX, fall) {
+  const sh = STORY_H;
+  const x = tower.x[i];
+  const tilt = atan2(x - prevX, sh) + fall * (i + 1) * 0.12;
+  const y = groundY - i * sh + fall * i * sh * 0.55;
+  const bw = storyWidth(i), ew = bw * 1.9;
+  push();
+  translate(baseX + x, y);
+  rotate(tilt);
+  // 立体：右奥へ下がる側面。光は左上から当たるので、側面は陰になる
+  const dx = bw * 0.22, dy = -bw * 0.12;
+  noStroke();
+  fill(...INK, 70);
+  quad(bw / 2, -sh + 26, bw / 2 + dx, -sh + 26 + dy, bw / 2 + dx, dy, bw / 2, 0);
+  fill(...SHU_DARK);
+  quad(bw / 2 + dx - 6, -sh + 26 + dy, bw / 2 + dx, -sh + 26 + dy, bw / 2 + dx, dy, bw / 2 + dx - 6, dy);
+  // 正面の壁（塊に見せる）と柱（朱）。平らな塗りに墨の輪郭線（浮世絵の主版）
+  stroke(...INK); strokeWeight(1.2);
+  fill(...WALL);
+  rect(-bw / 2, -sh + 26, bw, sh - 26);
+  fill(...SHU);
+  rect(-bw / 2, -sh + 26, 8, sh - 26);
+  rect(bw / 2 - 8, -sh + 26, 8, sh - 26);
+  // 高欄（二層目から上）：縁の手すりと束
+  if (i > 0) {
+    strokeWeight(1);
+    line(-bw / 2 - 10, -8, bw / 2 + 10, -8);
+    for (let px = -bw / 2 - 10; px <= bw / 2 + 10; px += 10) line(px, -8, px, -1);
   }
-  // 相輪
+  // 組物：軒を支える斗栱を、軒下に並ぶ小さな升で見せる
+  fill(...WALL); strokeWeight(0.8);
+  for (let kx = -bw / 2 - 6; kx < bw / 2 + 2; kx += 11) rect(kx, -sh + 26, 8, 5);
+  // 貫
+  stroke(...INK); strokeWeight(1);
+  line(-bw / 2, -sh * 0.45, bw / 2, -sh * 0.45);
+  // 屋根の上面：前の稜線から奥へ。正面より淡い墨で、面の向きの違いを出す
+  noStroke();
+  fill(...ROOF_TOP);
+  quad(-ew / 2, -sh + 16, 0, -sh + 4, dx, -sh + 4 + dy * 1.6, ew / 2 + dx, -sh + 16 + dy);
+  quad(0, -sh + 4, ew / 2, -sh + 16, ew / 2 + dx, -sh + 16 + dy, dx, -sh + 4 + dy * 1.6);
+  // 屋根：反りのある深い軒
+  fill(...INK);
+  beginShape();
+  // p5 2.x で bezierVertex の引数が変わったため、反りの点は bezierPoint で自前に打つ
+  for (let s = 0; s <= 10; s++) {
+    const u = s / 10;
+    vertex(bezierPoint(-ew / 2, -ew / 4, -bw / 3, 0, u), bezierPoint(-sh + 16, -sh + 24, -sh + 14, -sh + 4, u));
+  }
+  for (let s = 1; s <= 10; s++) {
+    const u = s / 10;
+    vertex(bezierPoint(0, bw / 3, ew / 4, ew / 2, u), bezierPoint(-sh + 4, -sh + 14, -sh + 24, -sh + 16, u));
+  }
+  vertex(ew / 2 - 6, -sh + 26);
+  vertex(-ew / 2 + 6, -sh + 26);
+  endShape(CLOSE);
+  // 瓦の筋：屋根の上面に、奥へ向かう平行線を刻む
+  stroke(...INK, 120); strokeWeight(0.8);
+  for (let tx = -ew / 2 + 10; tx < ew / 2; tx += 7) {
+    const fy = -sh + 16 - (1 - abs(tx) / (ew / 2)) * 11;
+    line(tx, fy, tx + dx * 0.9, fy + dy * 0.9 - (1 - abs(tx) / (ew / 2)) * 3);
+  }
+  noStroke();
+  // 垂木の小口：軒先に並ぶ小さな明るい点で、軒の厚みを見せる
+  fill(...PAPER, 150);
+  for (let rx = -ew / 2 + 14; rx < ew / 2 - 12; rx += 9) rect(rx, -sh + 22, 3, 2);
+  // 傷み：ひび
+  if (tower.damage > 0.2) {
+    stroke(...SHU, 255 * tower.damage); strokeWeight(1.5);
+    line(-bw / 3, -sh * 0.3, -bw / 6, -sh * 0.1);
+    line(bw / 4, -sh * 0.6, bw / 10, -sh * 0.35);
+  }
+  pop();
+}
+
+// 相輪
+function drawSpire(baseX, groundY, fall) {
   const top = tower.x[STORIES - 1];
   stroke(...INK); strokeWeight(3);
-  const ty = groundY - STORIES * sh + 4 + fall * STORIES * sh * 0.55;
+  const ty = groundY - STORIES * STORY_H + 4 + fall * STORIES * STORY_H * 0.55;
   line(baseX + top, ty, baseX + top * 1.1, ty - 70);
   for (let j = 0; j < 6; j++) {
     strokeWeight(1.5);
     const yy = ty - 12 - j * 9;
     line(baseX + top * 1.05 - 8, yy, baseX + top * 1.05 + 8, yy);
   }
-  // 心柱（透かして見せる）
-  if (ui.core.checked()) {
-    stroke(...SHU, 120); strokeWeight(5);
-    noFill();
-    beginShape();
-    vertex(baseX + ground.x, groundY);
-    for (let i = 0; i < STORIES; i++) vertex(baseX + tower.x[i], groundY - (i + 1) * sh + fall * i * sh * 0.55);
-    endShape();
-  }
-  // 状態
-  noStroke(); fill(...INK); textAlign(LEFT); textSize(14);
-  const state = tower.fallen > 0 ? '倒壊' : tower.damage > 0.05 ? `傷み ${(tower.damage * 100).toFixed(0)}%` : '健在';
-  text(`五重塔：${state}`, 40, 690);
-  fill(...INK, 150);
-  text('塔の上を左右にドラッグすると地面を揺らせる', 200, 690);
 }
 
 // --- 花鳥風月 --------------------------------------------------------------------
@@ -1152,20 +1206,27 @@ function drawBird() {
 }
 
 // 風が吹くと、梅の小枝から花びらが散る。雪の日は散らさない
-function drawPetals() {
+function stepPetals() {
   const wind = ui.wind.value();
-  if (!paused && perch && abs(wind) > 0.25 && ui.snow.value() < 0.3 && petals.length < 14 && random() < abs(wind) * 0.12) {
+  if (perch && abs(wind) > 0.25 && ui.snow.value() < 0.3 && petals.length < 14 && random() < abs(wind) * 0.12) {
     petals.push({ x: perch.x + random(-6, 30), y: perch.y + random(-4, 8), r: random(TWO_PI), s: random(0.8, 1.2) });
   }
+  for (const pt of petals) {
+    pt.x += wind * 3.2 * pt.s + sin(pt.r) * 0.5;
+    pt.y += 0.9 * pt.s;
+    pt.r += 0.08;
+  }
+  petals = petals.filter((pt) => pt.y < 640 && pt.x > -10 && pt.x < W + 10);
+}
+
+function drawPetals() {
   noStroke();
   for (const pt of petals) {
-    if (!paused) { pt.x += wind * 3.2 * pt.s + sin(pt.r) * 0.5; pt.y += 0.9 * pt.s; pt.r += 0.08; }
     push(); translate(pt.x, pt.y); rotate(pt.r);
     fill(...UME, 230); ellipse(0, 0, 5, 3.2);
     fill(...SHU, 120); circle(-1.6, 0, 1);
     pop();
   }
-  petals = petals.filter((pt) => pt.y < 640 && pt.x > -10 && pt.x < W + 10);
 }
 
 // --- 雨・雪・風 ------------------------------------------------------------------
@@ -1186,9 +1247,9 @@ function stepWeatherState(dt) {
 }
 
 // 濡れた地面。いちばん下の軒の下だけは乾いたまま残り、深い軒が足元を守っていることが見える
-function drawWetGround() {
+function drawWetGround(eaves) {
   if (wetness < 0.02 || tower.fallen > 0) return;
-  const e = eaveLines()[0];
+  const e = eaves[0];
   const y0 = 640, a = 85 * wetness;
   noStroke();
   // 濡れた土の色を、軒の下の境目と左右の端でぼかしながら細い短冊で塗る（四角い板に見えないように）
@@ -1211,10 +1272,10 @@ function drawWetGround() {
 }
 
 // 屋根に積もった雪。積もるほど塔は重くなる
-function drawSnowCaps() {
+function drawSnowCaps(eaves) {
   if (snowCover < 0.02 || tower.fallen > 0) return;
   const th = 2 + snowCover * 7;
-  for (const e of eaveLines()) {
+  for (const e of eaves) {
     const w = e.x2 - e.x1, y = e.y - 10;
     fill(244, 238, 226); stroke(...INK, 150); strokeWeight(1);
     beginShape();
@@ -1251,18 +1312,20 @@ function drawWeatherCaption() {
   text(parts.length ? parts.join('　') : '雨・雪・風のスライダーを動かすと、塔と年輪が応える', 40, 712);
 }
 
-function drawWeather() {
-  const rain = ui.rain.value(), snow = ui.snow.value(), wind = ui.wind.value();
-  const want = floor((rain + snow) * MAX_DROPS / 2);
+// 雨・雪の粒の数をスライダーに合わせる（一時停止中でもスライダー操作をすぐ見せる）
+function syncDrops() {
+  const want = floor((ui.rain.value() + ui.snow.value()) * MAX_DROPS / 2);
   while (drops.length < want) drops.push(newDrop(random(H)));
   if (drops.length > want) drops.length = want;
-  const eaves = eaveLines();
-  strokeWeight(1);
+}
+
+function stepDrops(eaves) {
+  const wind = ui.wind.value();
   for (const d of drops) {
     if (d.slide) { d.vx *= 1.02; d.vy += 0.3; }
     else { d.vx = wind * (d.snow ? 2.5 : 4) + (d.snow ? sin(frameCount * 0.05 + d.seed) * 0.6 : 0); }
     d.x += d.vx; d.y += d.vy;
-    if (!d.slide && d.x < 760) {
+    if (!d.slide && tower.fallen === 0 && d.x < 760) {
       for (const e of eaves) {
         if (d.y > e.y - 4 && d.y < e.y + 4 && d.x > e.x1 && d.x < e.x2) {
           // 深い軒が受けて、外へ流す
@@ -1274,6 +1337,12 @@ function drawWeather() {
       if (d.slide && !d.snow && d.y > 650 && splashes.length < 60) splashes.push({ x: d.x, t: 1 }); // 軒の外で地面に落ちる
       Object.assign(d, newDrop(-10));
     }
+  }
+}
+
+function drawWeather() {
+  strokeWeight(1);
+  for (const d of drops) {
     if (d.snow) { noStroke(); fill(...INK, d.slide ? 60 : 120); circle(d.x, d.y, 3); }
     else { stroke(...(d.slide ? SHU : INK), d.slide ? 160 : 70); line(d.x, d.y, d.x - d.vx * 3, d.y - d.vy * 3.2); } // 広重の雨のように細く長い平行線
   }
@@ -1445,10 +1514,17 @@ function mouseDragged() {
 
 function keyPressed() {
   if (learnDialog?.elt.open) return; // スペースなどは解説の操作に使う
-  if (key === 's') saveCanvas('ki-wa-oboete-iru', 'png');
-  if (key === ' ') { togglePause(); return false; }
-  if (key === 'f') meter.hidden = !meter.hidden;
-  if (key === 'e') startQuake();
+  const k = key.toLowerCase();
+  if (k === 's') saveCanvas('ki-wa-oboete-iru', 'png');
+  if (key === ' ') {
+    // ボタンやチェックボックスにフォーカスがあるときは、その部品の操作を優先する
+    const el = document.activeElement;
+    if (el && (el.tagName === 'BUTTON' || el.tagName === 'A' || el.type === 'checkbox' || el.type === 'radio')) return;
+    togglePause();
+    return false;
+  }
+  if (k === 'f') meter.hidden = !meter.hidden;
+  if (k === 'e') startQuake();
 }
 
 function updateLoop() {
