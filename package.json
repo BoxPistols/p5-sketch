@@ -1,0 +1,11 @@
+{
+  "name": "p5-sketch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node serve.mjs --open",
+    "start": "node serve.mjs",
+    "dev:host": "node serve.mjs --host --open",
+    "check": "node --check sketch.js && node --check serve.mjs"
+  }
+}
