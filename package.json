@@ -6,6 +6,8 @@
     "dev": "node serve.mjs --open",
     "start": "node serve.mjs",
     "dev:host": "node serve.mjs --host --open",
-    "check": "node --check sketch.js && node --check serve.mjs"
+    "capture": "node scripts/capture.mjs",
+    "new": "node scripts/new-work.mjs",
+    "check": "node --check serve.mjs && for f in scripts/*.mjs works/*/sketch.js; do node --check \"$f\" || exit 1; done"
   }
 }

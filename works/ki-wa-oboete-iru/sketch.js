@@ -16,7 +16,7 @@ const SHU_DARK = [142, 44, 30], WALL = [226, 215, 194], ROOF_TOP = [74, 64, 58];
 const KOGUCHI = [233, 217, 184], BARK = [74, 58, 46], BARK_LIGHT = [112, 92, 72], NAWA = [176, 150, 96];
 const SQ = 0.35;                  // 丸太の上面を斜めから見たときの縦のつぶれ
 
-let paused = false, meter;
+let paused = false, reducedMotion = false, meter;
 let ui = {};
 
 // 塔の状態。各層の横ずれ x と速度 v（地面からの相対）
@@ -51,7 +51,9 @@ function setup() {
   const startAge = Number(new URLSearchParams(location.search).get('age')) || 0;
   for (let i = 0; i < min(startAge, MAX_AGE); i++) addRing();
   document.addEventListener('visibilitychange', updateLoop);
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) paused = true;
+  reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // ?capture=1（pnpm capture が付ける）のときは止めずに撮らせる
+  if (reducedMotion && !new URLSearchParams(location.search).has('capture')) { paused = true; ui.play.html('動かす（スペース）'); }
   updateLoop();
 }
 
@@ -88,6 +90,7 @@ function buildUI() {
   ui.build.option('釘で固める', 'nail');
   ui.build.changed(resetTower);
   const btns = createDiv('').parent(panel).class('row');
+  ui.play = createButton('止める（スペース）').parent(btns).class('play').mousePressed(togglePause);
   createButton('地震を起こす').parent(btns).mousePressed(startQuake);
   createButton('建て直す').parent(btns).mousePressed(resetTower);
   createButton('年輪を新しく').parent(btns).mousePressed(resetRings);
@@ -101,11 +104,34 @@ function buildUI() {
     #panel input[type=range] { width:120px; accent-color:rgb(${SHU}); }
     #panel button, #panel select { font:inherit; padding:3px 10px; background:#f4eee2;
       border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
-    #panel button:hover { background:rgb(${SHU}); color:#fff; }`);
+    #panel button:hover, #panel button.play { background:rgb(${SHU}); color:#fff; border-color:rgb(${SHU}); }
+    #panel button:focus-visible, #panel select:focus-visible, #panel input:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }`);
   css.parent(document.head);
+  // 止まっている間にパネルを触ったら、1 枚描き直して変化を見せる
+  panel.elt.addEventListener('input', () => { if (!isLooping()) redraw(); });
+  panel.elt.addEventListener('click', () => { if (!isLooping()) redraw(); });
 }
 
 function startQuake() { quakeTime = 5; }
+
+// 一時停止の切り替え。スペースキー・パネルのボタン・停止中の画面クリックから呼ぶ
+function togglePause() {
+  paused = !paused;
+  ui.play.html(paused ? '動かす（スペース）' : '止める（スペース）');
+  updateLoop();
+  redraw();
+}
+
+function drawPausedVeil() {
+  noStroke(); fill(...PAPER, 170);
+  rect(0, 0, W, H);
+  fill(...INK); textAlign(CENTER, CENTER); textSize(30);
+  text('スペースキーで始める', W / 2, H / 2 - 14);
+  textSize(14); fill(...INK, 170);
+  text('画面のクリックでも始まります', W / 2, H / 2 + 22);
+  if (reducedMotion) text('「視差効果を減らす」設定がオンのため、止めた状態で開いています', W / 2, H / 2 + 44);
+  textAlign(LEFT, BASELINE);
+}
 
 // --- 毎フレーム ----------------------------------------------------------------
 function draw() {
@@ -121,11 +147,8 @@ function draw() {
   drawWeather();
   drawTower();
   drawRings();
-  // 止まっていることが画面で分かるようにする（「視差効果を減らす」設定だと最初から止まる）
-  if (paused) {
-    noStroke(); fill(...INK, 200); textAlign(CENTER); textSize(14);
-    text('停止中　スペースキーで動かす', W / 2, H - 16);
-  }
+  // 止まっているときは、始め方を画面の真ん中で伝える（「視差効果を減らす」設定だと最初から止まる）
+  if (paused) drawPausedVeil();
 
   recordFrame(performance.now() - started);
 }
@@ -233,7 +256,7 @@ function drawRings() {
   const cx = RC.x;
   // 地面の影（光が左上なので右へ）
   noStroke(); fill(...INK, 30);
-  ellipse(cx + rx * 0.2, bottom + ry * 0.5, rx * 2.15, ry * 1.3); // 画面の右端からはみ出さない幅
+  ellipse(cx + rx * 0.1, bottom + ry * 0.5, rx * 2.0, ry * 1.3); // 千年の太さでも画面の右端からはみ出さない幅
 
   // 側面（樹皮）。左が明るく右が暗いグラデーションで円柱に見せる
   const ctx = drawingContext;
@@ -452,13 +475,18 @@ function drawTitle() {
 }
 
 // --- 操作 -------------------------------------------------------------------------
+// 停止中に画面をクリックしたら始める
+function mousePressed() {
+  if (paused && mouseX >= 0 && mouseX <= W && mouseY >= 0 && mouseY <= H) togglePause();
+}
+
 function mouseDragged() {
   if (mouseX < 600 && mouseY < H) dragShake = constrain(dragShake + movedX * 0.8, -40, 40);
 }
 
 function keyPressed() {
   if (key === 's') saveCanvas('ki-wa-oboete-iru', 'png');
-  if (key === ' ') { paused = !paused; updateLoop(); redraw(); return false; }
+  if (key === ' ') { togglePause(); return false; }
   if (key === 'f') meter.hidden = !meter.hidden;
   if (key === 'e') startQuake();
 }

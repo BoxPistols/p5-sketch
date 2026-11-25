@@ -3,16 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>p5 sketch</title>
+  <title>p5 sketches</title>
   <style>
-    /* 墨と朱の作品に合わせ、地を和紙色にする */
-    html, body { margin: 0; min-height: 100%; background: #d9cfbb; }
-    body { display: flex; align-items: center; justify-content: center; padding: 16px 0; box-sizing: border-box; }
-    /* 画素数は 1200×720 のまま、表示だけ窓に収まるよう縮める（CPU の負荷は変わらない） */
-    canvas { display: block; width: min(calc(100vw - 32px), calc((100vh - 150px) * 1200 / 720)) !important; height: auto !important; aspect-ratio: 1200 / 720; }
+    :root { --paper: #f0e9da; --ink: #1c1816; --shu: #c43e2a; --muted: #6b625a; }
+    html, body { margin: 0; background: var(--paper); color: var(--ink); }
+    body { font: 15px/1.7 serif; padding: 40px 16px 64px; }
+    main { max-width: 1080px; margin: 0 auto; }
+    h1 { font-size: 28px; font-weight: normal; margin: 0 0 4px; }
+    .lead { color: var(--muted); margin: 0 0 32px; }
+    ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 28px; }
+    a { color: inherit; text-decoration: none; display: block; }
+    a:focus-visible { outline: 2px solid var(--shu); outline-offset: 4px; }
+    img { width: 100%; aspect-ratio: 1240 / 860; object-fit: cover; display: block; background: #d9cfbb; }
+    h2 { font-size: 18px; font-weight: normal; margin: 10px 0 2px; }
+    a:hover h2 { color: var(--shu); }
+    p { margin: 0; color: var(--muted); font-size: 13px; }
   </style>
-  <script src="lib/p5-2.4.0.min.js"></script>
-  <script src="sketch.js"></script>
 </head>
-<body></body>
+<body>
+  <main>
+    <h1>p5 sketches</h1>
+    <p class="lead">p5.js で作った作品。画像を選ぶと、ブラウザの中で動きます。</p>
+    <ul id="works"></ul>
+  </main>
+  <script>
+    // works.json の並びをそのまま一覧にする。作品を足すときは works.json に 1 件足す
+    fetch('works.json')
+      .then((r) => r.json())
+      .then((works) => {
+        const list = document.getElementById('works');
+        for (const w of works) {
+          const li = document.createElement('li');
+          li.innerHTML = `<a href="works/${w.slug}/${w.capture || ''}">
+            <img src="works/${w.slug}/capture.png" alt="" loading="lazy">
+            <h2></h2><p></p></a>`;
+          li.querySelector('h2').textContent = w.title;
+          li.querySelector('p').textContent = w.summary;
+          list.append(li);
+        }
+      })
+      .catch(() => {
+        document.getElementById('works').textContent = '作品の一覧を読めませんでした。pnpm dev で開いてください（file:// では読めません）。';
+      });
+  </script>
+</body>
 </html>
