@@ -133,13 +133,13 @@ function buildUI() {
   const css = createElement('style', `
     body { flex-direction: column; gap: 10px; }
     #panel { display:flex; flex-wrap:wrap; gap:6px 18px; max-width:min(${W}px, calc(100vw - 32px)); box-sizing:border-box; padding:10px 14px;
-      font:13px/1.4 serif; color:#2a2522; background:#cdbf9f; border-radius:4px; }
+      font:14px/1.4 serif; color:#2a2522; background:#cdbf9f; border-radius:4px; }
     #panel .row { display:flex; align-items:center; gap:8px; }
     #panel input[type=range] { width:120px; accent-color:rgb(${SHU}); }
     #panel button, #panel select { font:inherit; padding:3px 10px; background:#e2d6ba;
       border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
     #panel input[type=checkbox] { accent-color:rgb(${INK}); width:16px; height:16px; } /* OS の青を使わず墨色に */
-    #panel .readout { min-width:6.5em; color:#4a3f34; font-size:12px; }
+    #panel .readout { min-width:6.5em; color:#4a3f34; font-size:14px; }
     #panel .seg { display:inline-flex; border:1px solid #2a2522; border-radius:3px; overflow:hidden; }
     #panel .seg label { position:relative; display:inline-flex; cursor:pointer; }
     #panel .seg label + label { border-left:1px solid #2a2522; }
@@ -424,10 +424,10 @@ function drawRings() {
       const a = since < 3000 ? 255 : map(since, 3000, 4000, 255, 0);
       const bx = cx - 60, by = 360;
       fill(...KASUMI, a * 0.92); stroke(...INK, a); strokeWeight(1.2);
-      rectMode(CENTER); rect(bx, by, 300, 50); rectMode(CORNER);
+      rectMode(CENTER); rect(bx, by, 360, 56); rectMode(CORNER);
       noStroke(); fill(...SHU, a); textAlign(CENTER, CENTER); textSize(17);
       text(`樹齢${kanjiNumber(SHINBOKU_AGE)}年　御神木になる`, bx, by - 8);
-      fill(...INK, a * 0.8); textSize(11);
+      fill(...INK, a * 0.8); textSize(14);
       text('長い年月を生きた木は、注連縄を張って祀られる', bx, by + 12);
       textAlign(LEFT, BASELINE);
     }
@@ -437,8 +437,8 @@ function drawRings() {
   // 題箋（右上）。樹齢は漢数字の縦書き
   const name = age < 10 ? '芽生え' : age < 100 ? '若木' : age < SHINBOKU_AGE ? '木' : '御神木';
   drawCartouche(W - 70, 26, `${name}　樹齢${kanjiNumber(age)}年`, 18);
-  noStroke(); fill(...INK, 160); textAlign(RIGHT, BASELINE); textSize(12);
-  text('丸窓の断面にマウスを置くと、その年の輪を読める。朱の輪は地震の年', W - 30, 710);
+  noStroke(); fill(...INK, 160); textAlign(RIGHT, BASELINE); textSize(14);
+  text('丸窓の断面にマウスを置くと、その年の輪を読める。朱の輪は地震の年', W - 30, 690); // 下の行は天気の説明に譲る
   textAlign(LEFT, BASELINE);
 }
 
@@ -588,14 +588,14 @@ function drawInset() {
   circle(x, y, r * 2);
   strokeWeight(0.8);
   circle(x, y, r * 2 + 8);
-  noStroke(); fill(...INK, 190); textAlign(CENTER, TOP); textSize(12);
-  text(age < 1 ? '輪切りの見立て　まだ輪は無い' : '輪切りの見立て（胸の高さ）　触れると年輪を読める', x, y + r + 10);
+  noStroke(); fill(...INK, 190); textAlign(CENTER, TOP); textSize(14);
+  text(age < 1 ? '輪切りの見立て　まだ輪は無い' : '胸の高さの輪切り　触れて読む', x, y + r + 10);
   // いまの天気で、今年の輪がどうなるか。雨は太く、雪や嵐は細くする（addRing と同じ式の向き）
   const rain = ui.rain.value(), snow = ui.snow.value(), storm = abs(ui.wind.value()) * (rain + snow);
   const g = 1.4 + rain * 2.2 - snow * 0.9 - storm * 0.5;
   const why = g > 2.3 ? '太め（雨が多い）' : g < 1.1 ? (snow > storm ? '細め（雪で寒い）' : '細め（嵐）') : 'ふつう';
   fill(...(g < 1.1 ? SHU : INK), 200);
-  text(`今年の輪：${why}`, x, y + r + 26);
+  text(`今年の輪：${why}`, x, y + r + 30);
   // 虫眼鏡の印：丸窓に触れると拡大して読めることを、触る前から示す
   if (age >= 1) {
     const bx = x + r * 0.74, by = y + r * 0.74;
@@ -685,7 +685,7 @@ function drawLoupe(s, ring) {
   ctx.restore();
   noFill(); stroke(...INK); strokeWeight(2.5);
   circle(lx, ly, LR * 2);
-  noStroke(); fill(...INK, 170); textAlign(CENTER, TOP); textSize(11);
+  noStroke(); fill(...INK, 170); textAlign(CENTER, TOP); textSize(14);
   text(`${(RS / s).toFixed(1)} 倍に拡大`, lx, ly + LR + 6);
   textAlign(LEFT, BASELINE);
 }
@@ -723,7 +723,7 @@ function mouseMoved() {
 // 見出しごとに、内容を動きで見せる小さな SVG。動きは CSS のアニメーションで、閉じている間は描かれない
 const FC = { ink: '#241c16', shu: '#ac422c', late: '#a07c52', ko: '#dac49c', ai: '#344658', bark: '#46362a' };
 function svgFig(inner) {
-  return `<svg viewBox="0 0 96 72" width="96" height="72">${inner}</svg>`;
+  return `<svg viewBox="0 0 96 72" width="144" height="108">${inner}</svg>`; // 1.5 倍で描き、図の中の字も 14px 以上にする
 }
 // 五つの層。snake = 層ごとに少しずつずれて揺れる
 function figLayers(fill = FC.ko) {
@@ -768,23 +768,23 @@ function learnFigure(title) {
   }
   if (t('古い木')) return svgFig(`
     <path d="M12 6 V60 H92" fill="none" stroke="${FC.ink}"/>
-    <text x="14" y="10" font-size="8" fill="${FC.ink}">強さ</text><text x="92" y="70" font-size="8" fill="${FC.ink}" text-anchor="end">年月</text>
+    <text x="14" y="10" font-size="9.5" fill="${FC.ink}">強さ</text><text x="92" y="66" font-size="9.5" fill="${FC.ink}" text-anchor="end">年月</text>
     <path class="draw" pathLength="100" d="M12 42 C28 24, 44 18, 56 20 S78 30, 92 36" fill="none" stroke="${FC.shu}" stroke-width="1.8"/>`);
   if (t('伐った木')) return svgFig(
     figDisk(26, 32, 20, [5, 9, 13, 17], { grow: true }) +
     figDisk(70, 32, 18, [5, 9, 13], { grow: false, bark: false }) +
-    `<text x="26" y="68" font-size="8" text-anchor="middle" fill="${FC.ink}">立つ木</text><text x="70" y="68" font-size="8" text-anchor="middle" fill="${FC.ink}">切り株</text>`);
+    `<text x="26" y="68" font-size="9.5" text-anchor="middle" fill="${FC.ink}">立つ木</text><text x="70" y="68" font-size="9.5" text-anchor="middle" fill="${FC.ink}">切り株</text>`);
   if (t('中心が')) return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 20, 24, 28]));
   if (t('1 年は')) {
     let g = '';
     for (let i = 0; i < 6; i++) g += `<rect x="${8 + i * 14}" y="16" width="11" height="34" fill="${FC.ko}"/><rect x="${19 + i * 14}" y="16" width="3" height="34" fill="${FC.late}"/>`;
-    return svgFig(`<g class="wipe">${g}</g><text x="13" y="62" font-size="8" fill="${FC.ink}">早材</text><text x="20" y="11" font-size="8" fill="${FC.ink}">晩材</text>
+    return svgFig(`<g class="wipe">${g}</g><text x="13" y="62" font-size="9.5" fill="${FC.ink}">早材</text><text x="20" y="11" font-size="9.5" fill="${FC.ink}">晩材</text>
       <line x1="20.5" y1="13" x2="20.5" y2="17" stroke="${FC.ink}" stroke-width="0.6"/>`);
   }
   if (t('太るほど')) return svgFig(figDisk(48, 36, 34, [5, 12, 18, 23, 27, 30, 32, 33]));
   if (t('輪の太さ')) return svgFig(figDisk(48, 36, 32, [4, 11, 13, 20, 22, 23, 29, 31]));
   if (t('法隆寺')) return svgFig(figDisk(40, 34, 28, [4, 8, 11, 14, 17, 20, 23, 26], { red: 7 }) +
-    `<text x="72" y="40" font-size="10" fill="${FC.shu}">594</text>`);
+    `<text x="72" y="40" font-size="9.5" fill="${FC.shu}">594</text>`);
   if (t('傷は')) return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 17.5, 19, 23, 27], { red: 3 }));
   return '';
 }
@@ -880,7 +880,7 @@ function buildLearn() {
 
   createElement('style', `
     #ringcard { position:absolute; width:280px; padding:10px 12px; background:rgb(${KASUMI}); color:rgb(${INK});
-      border:1.5px solid rgb(${INK}); box-shadow:3px 3px 0 rgba(${INK},0.25); font:13px/1.6 "Hiragino Mincho ProN","Yu Mincho",serif;
+      border:1.5px solid rgb(${INK}); box-shadow:3px 3px 0 rgba(${INK},0.25); font:14px/1.6 "Hiragino Mincho ProN","Yu Mincho",serif;
       pointer-events:none; z-index:2; }
     #ringcard strong { display:block; font-size:16px; font-weight:normal; color:rgb(${SHU}); margin-bottom:2px; }
     #ringcard p { margin:0; }
@@ -907,11 +907,11 @@ function buildLearn() {
     #learn .head button.close { order:3; font:inherit; padding:2px 12px; background:#e2d6ba; border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
     #learn .head button.close:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
     #learn .body { padding:4px 18px 18px; }
-    #learn h2 { font-size:13px; font-weight:normal; color:#5e5244; margin:14px 0 0; }
-    #learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:4px 28px; margin:6px 0 4px; }
+    #learn h2 { font-size:14px; font-weight:normal; color:#5e5244; margin:14px 0 0; }
+    #learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(400px, 1fr)); /* 図が付くので 2 列にして本文の幅を確保する */ gap:4px 28px; margin:6px 0 4px; }
     #learn dt { color:rgb(${SHU}); margin-top:8px; }
     #learn dd { margin:0; }
-    #learn dl > div.has-fig { display:grid; grid-template-columns:96px 1fr; grid-template-rows:auto 1fr; column-gap:14px; align-items:start; } /* 図の高さで見出しの行が伸びないように */
+    #learn dl > div.has-fig { display:grid; grid-template-columns:144px 1fr; grid-template-rows:auto 1fr; column-gap:14px; align-items:start; } /* 図の高さで見出しの行が伸びないように */
     #learn .has-fig .fig { grid-row:span 2; margin-top:12px; cursor:pointer; }
     #learn .fig svg { display:block; }
     #learn .fig .sw { animation:fig-sw 2.4s ease-in-out infinite; }
@@ -937,9 +937,9 @@ function buildLearn() {
     /* 動きを減らす設定では止めた絵を見せ、マウスを載せたときか押したときだけ動かす */
     @media (prefers-reduced-motion: reduce) {
       #learn .fig:not(.play):not(:hover) * { animation:none !important; }
-      #learn .fig::after { content:'触れると動く'; display:block; font-size:11px; color:#5e5244; text-align:center; line-height:1.4; }
+      #learn .fig::after { content:'触れると動く'; display:block; font-size:14px; color:#5e5244; text-align:center; line-height:1.4; }
     }
-    #learn .src { font-size:12px; color:#5e5244; margin:10px 0 0; }
+    #learn .src { font-size:14px; color:#5e5244; margin:10px 0 0; }
     #learn .src a { color:inherit; margin-right:14px; }`).parent(document.head);
 }
 
@@ -1057,7 +1057,7 @@ function drawTower() {
     endShape();
   }
   // 状態
-  noStroke(); fill(...INK); textAlign(LEFT); textSize(13);
+  noStroke(); fill(...INK); textAlign(LEFT); textSize(14);
   const state = tower.fallen > 0 ? '倒壊' : tower.damage > 0.05 ? `傷み ${(tower.damage * 100).toFixed(0)}%` : '健在';
   text(`五重塔：${state}`, 40, 690);
   fill(...INK, 150);
@@ -1115,9 +1115,9 @@ function drawBird() {
   // 鳴き声は縦書きの小さな字で、枝の上に
   if (bird.song > 0 && !flying) {
     const a = min(1, bird.song) * 200;
-    noStroke(); fill(...INK, a); textSize(10); textAlign(CENTER, TOP);
+    noStroke(); fill(...INK, a); textSize(14); textAlign(CENTER, TOP);
     const t = 'ほうほけきょ';
-    for (let i = 0; i < t.length; i++) text(t[i], bird.x - 26, bird.y - 78 + i * 10.5);
+    for (let i = 0; i < t.length; i++) text(t[i], bird.x - 30, bird.y - 108 + i * 15);
     textAlign(LEFT, BASELINE);
   }
 }
@@ -1218,7 +1218,7 @@ function drawWeatherCaption() {
   if (rain > 0.05) parts.push('雨：軒が受けて外へ落とし、足元は乾く');
   if (snow > 0.05) parts.push(`雪：屋根に積もり、塔が重くなる ${floor(snowCover * 100)}%`);
   if (wind > 0.05) parts.push(ui.build.value() === 'nail' ? '風：釘の塔は硬く、しならない' : '風：木組みがしなって受け流す');
-  noStroke(); fill(...INK, 190); textAlign(LEFT, BASELINE); textSize(12);
+  noStroke(); fill(...INK, 190); textAlign(LEFT, BASELINE); textSize(14);
   text(parts.length ? parts.join('　') : '雨・雪・風のスライダーを動かすと、塔と年輪が応える', 40, 712);
 }
 
@@ -1267,13 +1267,13 @@ function eaveLines() {
 function drawTitle() {
   // 題箋（左上）。浮世絵の題名の札のように、縦書きで枠に入れる
   drawCartouche(40, 26, '木は覚えている', 24);
-  drawCartouche(88, 26, '五重塔と心柱と年輪', 12, true);
+  drawCartouche(88, 26, '五重塔と心柱と年輪', 14, true);
   // 落款：題の下に朱の印を一つ。版元や絵師の印のように、白抜きで「年輪」
   const sx = 46, sy = 252;
   noStroke(); fill(...SHU, 225);
-  rect(sx, sy, 26, 26, 2);
-  fill(...KASUMI); textAlign(CENTER, CENTER); textSize(11);
-  text('年', sx + 13, sy + 7.5); text('輪', sx + 13, sy + 19);
+  rect(sx, sy, 34, 34, 2);
+  fill(...KASUMI); textAlign(CENTER, CENTER); textSize(14);
+  text('年', sx + 17, sy + 9.5); text('輪', sx + 17, sy + 25);
   textAlign(LEFT, BASELINE);
 }
 
@@ -1435,7 +1435,7 @@ let frameCost = 0, frames = 0, lastReport = 0;
 function setupMeter() {
   meter = createDiv('').elt;
   meter.style.cssText =
-    'position:fixed;left:8px;top:8px;font:12px/1.4 ui-monospace,monospace;' +
+    'position:fixed;left:8px;top:8px;font:14px/1.4 ui-monospace,monospace;' +
     'color:#ccc;background:#000a;padding:4px 8px;border-radius:4px;pointer-events:none';
   meter.hidden = true;
 }
