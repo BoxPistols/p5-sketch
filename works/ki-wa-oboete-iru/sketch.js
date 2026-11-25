@@ -96,7 +96,11 @@ function buildUI() {
   ui.rain = row('雨', createSlider(0, 1, 0.3, 0.01));
   ui.snow = row('雪', createSlider(0, 1, 0, 0.01));
   ui.wind = row('風', createSlider(-1, 1, 0.2, 0.01));
-  ui.speed = row('時の速さ（年/秒）', createSlider(0, 60, 8, 1)); // 千年を最速 17 秒ほどで
+  // 既定は毎秒 45 年。若木のうちは自動でゆっくり進むので、千年までおよそ 25 秒（芽吹きと御神木になる瞬間は見える）
+  ui.speed = row('時の速さ', createSlider(0, 120, 45, 1));
+  ui.speedText = createSpan('').parent(ui.speed.parent()).class('readout');
+  ui.speed.input(updateSpeedText);
+  updateSpeedText();
   ui.core = row('心柱', createCheckbox('', true));
   // 二択なので、両方が常に見えるラジオにする（横に並ぶ切り替え）
   ui.build = row('組み方', createRadio('build'));
@@ -122,6 +126,7 @@ function buildUI() {
     #panel button, #panel select { font:inherit; padding:3px 10px; background:#e2d6ba;
       border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
     #panel input[type=checkbox] { accent-color:rgb(${INK}); width:16px; height:16px; } /* OS の青を使わず墨色に */
+    #panel .readout { min-width:6.5em; color:#4a3f34; font-size:12px; }
     #panel .seg { display:inline-flex; border:1px solid #2a2522; border-radius:3px; overflow:hidden; }
     #panel .seg label { position:relative; display:inline-flex; cursor:pointer; }
     #panel .seg label + label { border-left:1px solid #2a2522; }
@@ -139,6 +144,15 @@ function buildUI() {
 }
 
 // 地震は 3 秒揺れる。年輪に残るのは揺れが始まった年の 1 本だけ（時を速めても、何十年も揺れ続けたことにはしない）
+// 若木のうちは時をゆっくり進める（芽から百五十年かけて、2.5 割の速さから等速へ）。育ちの様子が見えるように
+function youthPace() {
+  return 0.25 + 0.75 * min(1, age / 150);
+}
+
+function updateSpeedText() {
+  if (ui.speedText) ui.speedText.html(`毎秒 ${ui.speed.value()} 年`);
+}
+
 function startQuake() { quakeTime = 3; quakeRecorded = false; }
 let quakeRecorded = false;
 
@@ -153,9 +167,10 @@ function toggleMax() {
     ui.max.html('すべて最大');
   } else {
     maxSaved = Object.fromEntries(keys.map((k) => [k, ui[k].value()]));
-    ui.quake.value(1); ui.rain.value(1); ui.snow.value(1); ui.wind.value(1); ui.speed.value(60);
+    ui.quake.value(1); ui.rain.value(1); ui.snow.value(1); ui.wind.value(1); ui.speed.value(120);
     ui.max.html('元に戻す');
   }
+  updateSpeedText(); // 値をコードで変えたときは input が起きないので、表示を合わせる
   if (!isLooping()) redraw();
 }
 
@@ -251,7 +266,7 @@ function stepTower(dt) {
 
 function stepYears(dt) {
   yearStorm = max(yearStorm, abs(ui.wind.value()) * (ui.rain.value() + ui.snow.value()));
-  yearClock += dt * ui.speed.value();
+  yearClock += dt * ui.speed.value() * youthPace();
   while (yearClock >= 1) {
     yearClock -= 1;
     addRing();
