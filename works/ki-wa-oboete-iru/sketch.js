@@ -21,6 +21,7 @@ const TOWER_BASE = 634;           // 基壇の上面。塔は地面の帯の中�
 let backdrop, patina;
 
 let paused = false, reducedMotion = false, meter;
+let everStarted = false; // 一度でも動かしたか。幕は最初の案内にだけ使う
 let ui = {};
 
 // 塔の状態。各層の横ずれ x と速度 v（地面からの相対）
@@ -98,8 +99,8 @@ function buildUI() {
   ui.rain = row('雨', createSlider(0, 1, 0.3, 0.01));
   ui.snow = row('雪', createSlider(0, 1, 0, 0.01));
   ui.wind = row('風', createSlider(-1, 1, 0.2, 0.01));
-  // 既定は毎秒 45 年。若木のうちは自動でゆっくり進むので、千年までおよそ 25 秒（芽吹きと御神木になる瞬間は見える）
-  ui.speed = row('時の速さ', createSlider(0, 120, 45, 1));
+  // 既定は毎秒 25 年。若木のうちは自動でゆっくり進むので、御神木までおよそ 17 秒、千年までおよそ 45 秒
+  ui.speed = row('時の速さ', createSlider(0, 120, 25, 1));
   ui.speedText = createSpan('').parent(ui.speed.parent()).class('readout');
   ui.speed.input(updateSpeedText);
   updateSpeedText();
@@ -155,6 +156,14 @@ function updateSpeedText() {
   if (ui.speedText) ui.speedText.html(`毎秒 ${ui.speed.value()} 年`);
 }
 
+function selectLearnTab(n, focus = false) {
+  const tabs = selectAll('#learn [role=tab]'), panels = selectAll('#learn [role=tabpanel]');
+  tabs.forEach((t, i) => { t.attribute('aria-selected', String(i === n)); t.attribute('tabindex', i === n ? '0' : '-1'); });
+  panels.forEach((p, i) => (i === n ? p.removeAttribute('hidden') : p.attribute('hidden', '')));
+  select('#learn .body').elt.scrollTop = 0;
+  if (focus) tabs[n].elt.focus();
+}
+
 function startQuake() { quakeTime = 3; quakeRecorded = false; }
 let quakeRecorded = false;
 
@@ -179,11 +188,24 @@ function toggleMax() {
 // 一時停止の切り替え。スペースキー・パネルのボタン・停止中の画面クリックから呼ぶ
 function togglePause() {
   paused = !paused;
+  if (!paused) everStarted = true;
   ui.play.html(paused ? '動かす（スペース）' : '止める（スペース）');
   updateLoop();
   redraw();
 }
 
+function drawPausedMark() {
+  const x = W / 2, y = 30;
+  noStroke(); fill(...KASUMI, 235);
+  rect(x - 125, y - 15, 250, 30);
+  noFill(); stroke(...INK); strokeWeight(1.2);
+  rect(x - 125, y - 15, 250, 30);
+  noStroke(); fill(...INK);
+  rect(x - 108, y - 7, 4, 14); rect(x - 100, y - 7, 4, 14); // 一時停止の印
+  textAlign(LEFT, CENTER); textSize(14);
+  text("止めています　スペースで再開", x - 88, y);
+  textAlign(LEFT, BASELINE);
+}
 function drawPausedVeil() {
   noStroke(); fill(...PAPER, 170);
   rect(0, 0, W, H);
@@ -213,7 +235,8 @@ function draw() {
   drawRings();
   image(patina, 0, 0); // 風化の層（四隅の暗がり・しみ・折り目）を最後に重ねる
   // 止まっているときは、始め方を画面の真ん中で伝える（「視差効果を減らす」設定だと最初から止まる）
-  if (paused) drawPausedVeil();
+  // 最初は幕で始め方を案内する。動かした後の一時停止は絵を覆わず、止まっていることだけ示す（止めて年輪を読めるように）
+  if (paused) everStarted ? drawPausedMark() : drawPausedVeil();
 
   updateCursor();
   recordFrame(performance.now() - started);
@@ -654,8 +677,15 @@ function mouseMoved() {
 }
 
 // 開いて読める説明の欄を 1 つ作る。facts は [見出し, 本文]、sources は [名前, URL]
-function learnSection(body, title, facts, sources) {
-  const sec = createElement('section').parent(body);
+// 五重塔と年輪は並列なので、ダイアログの中でタブにする。tabs にタブを足し、本文は選んだものだけ見せる
+function learnSection(body, tabs, label, title, facts, sources) {
+  const n = tabs.elt.children.length, first = n === 0;
+  const sec = createElement('section').parent(body).id(`learn-panel-${n}`)
+    .attribute('role', 'tabpanel').attribute('aria-labelledby', `learn-tab-${n}`);
+  if (!first) sec.attribute('hidden', '');
+  const tab = createButton(label).parent(tabs).id(`learn-tab-${n}`).attribute('role', 'tab')
+    .attribute('aria-controls', `learn-panel-${n}`).attribute('aria-selected', String(first)).attribute('tabindex', first ? '0' : '-1');
+  tab.mousePressed(() => selectLearnTab(n));
   createElement('h2', title).parent(sec);
   const dl = createElement('dl').parent(sec);
   for (const [t, d] of facts) {
@@ -675,7 +705,15 @@ function buildLearn() {
   learnDialog = createElement('dialog').id('learn').attribute('aria-labelledby', 'learn-title');
   const head = createDiv('').parent(learnDialog).class('head');
   createElement('h1', '解説').parent(head).id('learn-title');
-  createButton('閉じる').parent(head).mousePressed(() => learnDialog.elt.close());
+  createButton('閉じる').parent(head).class('close').mousePressed(() => learnDialog.elt.close());
+  const tabs = createDiv('').parent(head).class('tabs').attribute('role', 'tablist').attribute('aria-label', '解説の種類');
+  // 左右の矢印キーでタブを移る（タブの決まった操作）
+  tabs.elt.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const all = [...tabs.elt.children], i = all.indexOf(document.activeElement);
+    selectLearnTab((i + (e.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length, true);
+    e.preventDefault();
+  });
   const body = createDiv('').parent(learnDialog).class('body');
   // 外側（背景）をクリックしたら閉じる
   learnDialog.elt.addEventListener('click', (e) => { if (e.target === learnDialog.elt) learnDialog.elt.close(); });
@@ -691,7 +729,7 @@ function buildLearn() {
   open.mousePressed(() => learnDialog.elt.showModal());
 
   // 五重塔のしくみ：地震と雨・雪・風への強さ。作品で単純化したところは、そうと書く
-  learnSection(body, '五重塔のしくみ（地震と雨・雪・風への強さ）', [
+  learnSection(body, tabs, '五重塔のしくみ', '地震と雨・雪・風への強さ', [
     ['各層は積み重ねてあるだけ', '五重塔の各層は一つずつ独立して組まれ、下の層の上に載っている。一階から最上階までを貫く通し柱は無い。地震では各層が別々に、少しずつずれながら揺れる。'],
     ['心柱は塔に縛られていない', '塔の真ん中を貫く心柱は、多くの塔で各層と構造的に切り離され、上の方でわずかに接するだけになっている。地震では心柱と各層が別々に揺れ、その動きの食い違いが塔全体の揺れを抑えると考えられている。仕組みの詳しいところは、実際の塔の観測や模型の振動実験で今も調べられている。'],
     ['木組みは揺れを吸う', '継手・仕口で木と木を組んだ接合部は、揺れると擦れ合い、少しずつめり込みながら力を受け流す。釘や金物で硬く固めた建物は、しなる余地が少ないぶん、同じ揺れで接合部や部材に力が集まりやすい。'],
@@ -706,7 +744,7 @@ function buildLearn() {
     ['立命館大学 古材の強度に関する論文', 'https://ritsumei.repo.nii.ac.jp/record/8954/files/dmuch2_20.pdf'],
   ]);
 
-  learnSection(body, '年輪のしくみ', [
+  learnSection(body, tabs, '年輪のしくみ', '木が一年ずつ刻むもの', [
     ['伐った木は年輪が増えない', '年輪をつくる形成層は、生きている木の樹皮のすぐ内側にしかない。伐った丸太や切り株は、ほとんどの場合もう太らない。この作品で断面を丸窓に描いているのは、立っている木の幹を輪切りにしたらこう見える、という見立てだから。'],
     ['中心がいちばん古い', '年輪は、樹皮のすぐ内側にある形成層が毎年つくる。新しい木の層は古い層の外側に重なるので、中心（髄）が最初の年で、外側ほど新しい。'],
     ['1 年は淡い帯と濃い線でできている', '春に育つ部分（早材）は細胞が大きく壁が薄いので淡い。夏から秋に育つ部分（晩材）は細胞が小さく壁が厚いので濃い。この濃い部分の外側が 1 年の区切りになる。'],
@@ -740,10 +778,16 @@ function buildLearn() {
     #learn .head { position:sticky; top:0; display:flex; justify-content:space-between; align-items:center;
       padding:10px 18px; background:#cdbf9f; border-bottom:1px solid rgba(${INK},0.4); }
     #learn h1 { font-size:18px; font-weight:normal; margin:0; }
-    #learn .head button { font:inherit; padding:2px 12px; background:#e2d6ba; border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
-    #learn .head button:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
+    #learn .tabs { display:flex; gap:0; margin:0 auto 0 28px; align-self:flex-end; margin-bottom:-11px; }
+    #learn [role=tab] { font:inherit; font-size:15px; padding:6px 18px 8px; background:transparent; color:#5e5244;
+      border:1px solid transparent; border-bottom:none; cursor:pointer; }
+    #learn [role=tab][aria-selected=true] { background:#d6c8a8; color:rgb(${INK}); border-color:rgba(${INK},0.4); }
+    #learn [role=tab]:hover { color:rgb(${SHU}); }
+    #learn [role=tab]:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:-3px; }
+    #learn .head button.close { order:3; font:inherit; padding:2px 12px; background:#e2d6ba; border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
+    #learn .head button.close:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
     #learn .body { padding:4px 18px 18px; }
-    #learn h2 { font-size:16px; font-weight:normal; margin:18px 0 0; padding-bottom:4px; border-bottom:1px solid rgba(${INK},0.3); }
+    #learn h2 { font-size:13px; font-weight:normal; color:#5e5244; margin:14px 0 0; }
     #learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:4px 28px; margin:6px 0 4px; }
     #learn dt { color:rgb(${SHU}); margin-top:8px; }
     #learn dd { margin:0; }
@@ -1032,7 +1076,8 @@ function makeBackdrop() {
 // 停止中に画面をクリックしたら始める
 function mousePressed() {
   if (learnDialog?.elt.open) return; // 解説を開いている間は作品を触らない
-  if (paused && mouseX >= 0 && mouseX <= W && mouseY >= 0 && mouseY <= H) togglePause();
+  // 画面のクリックで始めるのは最初の幕だけ。止めた後は、年輪を読むためのクリックで動き出さないようにする
+  if (paused && !everStarted && mouseX >= 0 && mouseX <= W && mouseY >= 0 && mouseY <= H) togglePause();
 }
 
 function mouseDragged() {
