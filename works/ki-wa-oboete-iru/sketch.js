@@ -14,6 +14,8 @@ const INK = [28, 24, 22], SHU = [196, 62, 42], PAPER = [240, 233, 218];
 // 立体にするための色。朱と墨の陰、木口（断面）、樹皮
 const SHU_DARK = [142, 44, 30], WALL = [226, 215, 194], ROOF_TOP = [74, 64, 58];
 const KOGUCHI = [233, 217, 184], BARK = [74, 58, 46], BARK_LIGHT = [112, 92, 72], NAWA = [176, 150, 96];
+const AI = [43, 75, 111], OUDO = [214, 198, 158], KASUMI = [246, 238, 222], LATEWOOD = [176, 142, 98];
+let backdrop;
 const SQ = 0.35;                  // 丸太の上面を斜めから見たときの縦のつぶれ
 
 let paused = false, reducedMotion = false, meter;
@@ -27,7 +29,7 @@ let quakeTime = 0;          // 残りの地震時間（秒）
 let dragShake = 0;
 
 // 年輪
-let rings, ringR = 6, age = 0, yearClock = 0;
+let rings, ringR = 6, age = 0, yearClock = 0, growthDip = 0;
 let yearQuake = 0, yearStorm = 0; // その年に受けた揺れと嵐の大きさ
 const RING_MAX = 250;
 const MAX_AGE = 1000;             // 千年で断面がいっぱいになる
@@ -40,7 +42,8 @@ function setup() {
   pixelDensity(DENSITY);
   frameRate(FPS);
   createCanvas(W, H);
-  textFont('serif');
+  textFont('"Hiragino Mincho ProN", "Yu Mincho", serif'); // 明朝で、版本の文字に寄せる
+  backdrop = makeBackdrop();
   rings = createGraphics(RING_MAX * 2 + 20, RING_MAX * 2 + 20);
   rings.pixelDensity(DENSITY);
   resetTower();
@@ -63,7 +66,7 @@ function resetTower() {
 
 function resetRings() {
   rings.clear();
-  ringR = 6; age = 0;
+  ringR = 6; age = 0; growthDip = 0;
   // 髄（中心）
   rings.noStroke();
   rings.fill(...INK, 200);
@@ -142,7 +145,7 @@ function draw() {
   stepTower(dt);
   stepYears(dt);
 
-  background(...PAPER);
+  image(backdrop, 0, 0); // 空・霞・地面・和紙は最初に一度だけ描いたものを貼る
   drawTitle();
   drawWeather();
   drawTower();
@@ -211,43 +214,54 @@ function stepYears(dt) {
 
 // --- 年輪 ----------------------------------------------------------------------
 function addRing() {
-  if (age >= MAX_AGE) return;
+  if (age >= MAX_AGE) return; // 千年で断面がいっぱい。それ以上は輪を足さない
   age++;
-  // 雨の多い年は太く、雪の多い年・嵐の年は細る（平均がほぼ 1 になる係数）
-  const w = max(0.3, (1.4 + ui.rain.value() * 2.2 - ui.snow.value() * 0.9 - yearStorm * 0.5 + noise(age * 0.3) * 1.2) / 2.5);
-  // 実際の木と同じく、太るほど 1 年の輪は細くなる。千年で断面いっぱいになる曲線（r ∝ 年^0.75）
-  const base = 0.75 * RING_MAX / MAX_AGE * pow(age / MAX_AGE, -0.25);
-  const r = min(RING_MAX - 2, ringR + base * w);
+  // 年輪は中心（髄）が最初の年で、樹皮のすぐ内側の形成層が毎年その外側に新しい輪を足す。
+  // 雨の多い年は太く、雪の多い年・嵐の年は細る（平均がほぼ 1 になる係数）。
+  // 地震で傷んだ木は、その後の数年の成長が落ちる（growthDip）
+  const w = max(0.3, (1.4 + ui.rain.value() * 2.2 - ui.snow.value() * 0.9 - yearStorm * 0.5 + noise(age * 0.3) * 1.2) / 2.5) * (1 - growthDip);
+  // 太るほど 1 年の輪は細くなる。目安の半径は 千年で断面いっぱい（r ∝ 年^0.75）。
+  // 天候で太さは揺れるが、目安から離れすぎないよう少しずつ引き戻す。外周に輪が積み重ならない
+  const target = (RING_MAX - 4) * pow(age / MAX_AGE, 0.75);
+  const prevTarget = (RING_MAX - 4) * pow((age - 1) / MAX_AGE, 0.75);
+  let r = ringR + max(0.05, (target - prevTarget) * w);
+  r = min(RING_MAX - 4, lerp(r, max(target, 6), 0.04));
   const step = r - ringR;
   const cx = rings.width / 2, cy = rings.height / 2;
   const scar = constrain(yearQuake, 0, 3);
+  growthDip = scar > 0.6 ? min(0.6, growthDip + scar * 0.15) : growthDip * 0.8;
   rings.noFill();
-  // 晩材（濃い線）。輪が細い老木では線を淡くし、重なって真っ黒にならないようにする
-  rings.stroke(...(scar > 0.6 ? SHU : INK), scar > 0.6 ? 200 : map(step, 0.15, 1.2, 8, 110, true) * (0.4 + 1.6 * pow(noise(age * 0.07 + 50), 2)) + yearStorm * 40); // 細い輪ほど淡く、気候の波で濃淡の帯を作る
-  rings.strokeWeight(scar > 0.6 ? 1.4 : step < 0.5 ? 0.6 : 0.8);
-  rings.beginShape();
-  for (let a = 0; a < TWO_PI; a += TWO_PI / 140) {
-    const n = noise(cos(a) * 1.3 + 10, sin(a) * 1.3 + 10, r * 0.01);
-    const jag = scar > 0.6 ? (noise(a * 9, age) - 0.5) * scar * 4 : 0;
-    const rr = r * (0.92 + n * 0.16) + jag;
-    rings.vertex(cx + rr * cos(a), cy + rr * sin(a));
+  // 晩材の帯：若い太い輪では、秋に締まった濃い部分を幅のある帯で描く
+  if (step > 0.5 && scar <= 0.6) {
+    rings.stroke(...LATEWOOD, 70);
+    rings.strokeWeight(step * 0.45);
+    ringPath(cx, cy, r - step * 0.2, 0);
   }
-  rings.endShape(CLOSE);
-  // 地震の年は放射状のひび
-  if (scar > 1.2) {
-    const a = random(TWO_PI);
-    rings.stroke(...SHU, 150);
-    rings.line(cx + cos(a) * r * 0.6, cy + sin(a) * r * 0.6, cx + cos(a) * r, cy + sin(a) * r);
-  }
+  // 晩材の境（濃い線）。輪が細い老木では線を淡くし、重なって真っ黒にならないようにする
+  rings.stroke(...(scar > 0.6 ? SHU : INK), scar > 0.6 ? 200 : map(step, 0.15, 1.2, 8, 110, true) * (0.4 + 1.6 * pow(noise(age * 0.07 + 50), 2)) + yearStorm * 40);
+  rings.strokeWeight(scar > 0.6 ? 1.2 : step < 0.5 ? 0.6 : 0.8);
+  ringPath(cx, cy, r, scar);
   ringR = r;
 }
 
+// 1 本の輪の形。幹は真円ではないので、角度ごとにノイズで少し歪める。地震の年は輪が乱れる
+function ringPath(cx, cy, r, scar) {
+  rings.beginShape();
+  for (let a = 0; a < TWO_PI; a += TWO_PI / 140) {
+    const n = noise(cos(a) * 1.3 + 10, sin(a) * 1.3 + 10, r * 0.01);
+    const jag = scar > 0.6 ? (noise(a * 9, age) - 0.5) * scar * 3 : 0;
+    const rr = r * (0.94 + n * 0.08) + jag;
+    rings.vertex(cx + rr * cos(a), cy + rr * sin(a));
+  }
+  rings.endShape(CLOSE);
+}
+
 // 心柱の丸太を斜め上から見る。上面が年輪、側面が樹皮。幹は樹齢とともに太く高くなる
-const LOG_BASE_Y = 560;           // 丸太の底面の中心
+const LOG_BASE_Y = 600;           // 丸太の底面の中心
 function logShape() {
   const rx = ringR + 5;           // 樹皮の厚みを足す
   const ry = rx * SQ;
-  const tall = 40 + ringR * 1.3;
+  const tall = 40 + ringR * 1.1;
   return { rx, ry, top: LOG_BASE_Y - tall, bottom: LOG_BASE_Y };
 }
 
@@ -272,6 +286,7 @@ function drawRings() {
   ctx.lineTo(cx + rx, top);
   ctx.closePath();
   ctx.fill();
+  ctx.strokeStyle = `rgb(${INK})`; ctx.lineWidth = 1.5; ctx.stroke(); // 版画の墨線
   // 樹皮の縦の割れ目。手前の半周だけ、円柱に沿って間隔が詰まる
   stroke(...INK, 110); strokeWeight(1); noFill();
   for (let k = 1; k < 28; k++) {
@@ -296,10 +311,11 @@ function drawRings() {
 
   if (age >= SHINBOKU_AGE) drawShimenawa(cx, rx, ry, lerp(top, bottom, 0.38));
 
-  noStroke(); fill(...INK); textAlign(CENTER); textSize(15);
-  text(`${age >= SHINBOKU_AGE ? '御神木' : '心柱の木'}　樹齢 ${age} 年`, cx, 682);
-  textSize(12); fill(...INK, 150);
-  text('朱の輪は地震を受けた年。木はその年を覚えている', cx, 700);
+  // 題箋（右上）。樹齢は漢数字の縦書き
+  drawCartouche(W - 70, 26, `${age >= SHINBOKU_AGE ? '御神木' : '心柱の木'}　樹齢${kanjiNumber(age)}年`, 18);
+  noStroke(); fill(...INK, 160); textAlign(RIGHT, BASELINE); textSize(12);
+  text('朱の輪は地震を受けた年。木はその年を覚えている', W - 30, 710);
+  textAlign(LEFT, BASELINE);
 }
 
 // 注連縄と紙垂。幹の手前の半周に縄を巻き、白い紙垂を垂らす
@@ -360,11 +376,22 @@ function drawTower() {
     fill(...SHU_DARK);
     quad(bw / 2 + dx - 6, -sh + 26 + dy, bw / 2 + dx, -sh + 26 + dy, bw / 2 + dx, dy, bw / 2 + dx - 6, dy);
     // 正面の壁（塊に見せる）と柱（朱）
+    // 平らな塗りに墨の輪郭線（浮世絵の主版）
+    stroke(...INK); strokeWeight(1.2);
     fill(...WALL);
     rect(-bw / 2, -sh + 26, bw, sh - 26);
     fill(...SHU);
     rect(-bw / 2, -sh + 26, 8, sh - 26);
     rect(bw / 2 - 8, -sh + 26, 8, sh - 26);
+    // 高欄（二層目から上）：縁の手すりと束
+    if (i > 0) {
+      strokeWeight(1);
+      line(-bw / 2 - 10, -8, bw / 2 + 10, -8);
+      for (let px = -bw / 2 - 10; px <= bw / 2 + 10; px += 10) line(px, -8, px, -1);
+    }
+    // 組物：軒を支える斗栱を、軒下に並ぶ小さな升で見せる
+    fill(...WALL); strokeWeight(0.8);
+    for (let kx = -bw / 2 - 6; kx < bw / 2 + 2; kx += 11) rect(kx, -sh + 26, 8, 5);
     // 貫
     stroke(...INK); strokeWeight(1);
     line(-bw / 2, -sh * 0.45, bw / 2, -sh * 0.45);
@@ -388,6 +415,13 @@ function drawTower() {
     vertex(ew / 2 - 6, -sh + 26);
     vertex(-ew / 2 + 6, -sh + 26);
     endShape(CLOSE);
+    // 瓦の筋：屋根の上面に、奥へ向かう平行線を刻む
+    stroke(...INK, 120); strokeWeight(0.8);
+    for (let tx = -ew / 2 + 10; tx < ew / 2; tx += 7) {
+      const fy = -sh + 16 - (1 - abs(tx) / (ew / 2)) * 11;
+      line(tx, fy, tx + dx * 0.9, fy + dy * 0.9 - (1 - abs(tx) / (ew / 2)) * 3);
+    }
+    noStroke();
     // 垂木の小口：軒先に並ぶ小さな明るい点で、軒の厚みを見せる
     fill(...PAPER, 150);
     for (let rx = -ew / 2 + 14; rx < ew / 2 - 12; rx += 9) rect(rx, -sh + 22, 3, 2);
@@ -449,7 +483,7 @@ function drawWeather() {
     }
     if (d.y > 620 || d.x < -20 || d.x > W + 20) Object.assign(d, newDrop(-10));
     if (d.snow) { noStroke(); fill(...INK, d.slide ? 60 : 120); circle(d.x, d.y, 3); }
-    else { stroke(...(d.slide ? SHU : INK), d.slide ? 160 : 70); line(d.x, d.y, d.x - d.vx, d.y - d.vy * 1.4); }
+    else { stroke(...(d.slide ? SHU : INK), d.slide ? 160 : 70); line(d.x, d.y, d.x - d.vx * 3, d.y - d.vy * 3.2); } // 広重の雨のように細く長い平行線
   }
 }
 
@@ -468,10 +502,75 @@ function eaveLines() {
 }
 
 function drawTitle() {
-  noStroke(); fill(...INK); textAlign(LEFT); textSize(22);
-  text('木は覚えている', 40, 48);
-  textSize(12); fill(...INK, 150);
-  text('五重塔の柔らかい構造と心柱、そして年輪', 40, 68);
+  // 題箋（左上）。浮世絵の題名の札のように、縦書きで枠に入れる
+  drawCartouche(40, 26, '木は覚えている', 24);
+  drawCartouche(88, 26, '五重塔と心柱と千年の年輪', 12, true);
+}
+
+// 縦書きの札。淡い地に墨の二重枠
+function drawCartouche(x, y, str, size, plain = false) {
+  const chars = [...str];
+  const pad = size * 0.6, step = size * 1.12;
+  const w = size + pad * 2, h = chars.length * step + pad * 2 - (step - size);
+  if (!plain) {
+    fill(...KASUMI); stroke(...INK); strokeWeight(1.5);
+    rect(x, y, w, h);
+    noFill(); strokeWeight(0.8);
+    rect(x + 3, y + 3, w - 6, h - 6);
+  }
+  noStroke(); fill(...INK, plain ? 200 : 255); textSize(size); textAlign(CENTER, TOP);
+  chars.forEach((c, i) => {
+    if (c === '　') return;
+    text(c, x + w / 2, y + pad + i * step);
+  });
+  textAlign(LEFT, BASELINE);
+}
+
+// 1000 までの数を漢数字にする（樹齢の題箋用）
+function kanjiNumber(n) {
+  if (n === 0) return '〇';
+  const d = '〇一二三四五六七八九';
+  let out = '';
+  const th = floor(n / 1000), h = floor(n / 100) % 10, t = floor(n / 10) % 10, o = n % 10;
+  if (th) out += (th > 1 ? d[th] : '') + '千';
+  if (h) out += (h > 1 ? d[h] : '') + '百';
+  if (t) out += (t > 1 ? d[t] : '') + '十';
+  if (o) out += d[o];
+  return out;
+}
+
+// 背景。最初に一度だけ描いて、毎フレームは貼るだけにする
+function makeBackdrop() {
+  const g = createGraphics(W, H);
+  g.pixelDensity(DENSITY);
+  g.background(...PAPER);
+  // 和紙の繊維：短い横向きの淡い筋
+  g.noStroke();
+  randomSeed(7);
+  for (let i = 0; i < 4000; i++) {
+    g.fill(...INK, random(3, 10));
+    g.rect(random(W), random(H), random(2, 6), 0.8);
+  }
+  // 一文字ぼかし：空の上端を藍で刷り、下へ消していく
+  const c = g.drawingContext;
+  const grad = c.createLinearGradient(0, 0, 0, 180);
+  grad.addColorStop(0, `rgba(${AI}, 0.9)`);
+  grad.addColorStop(0.4, `rgba(${AI}, 0.4)`);
+  grad.addColorStop(1, `rgba(${AI}, 0)`);
+  c.fillStyle = grad;
+  c.fillRect(0, 0, W, 180);
+  // すやり霞：平らな帯を墨の輪郭で
+  g.fill(...KASUMI); g.stroke(...INK, 110); g.strokeWeight(1.2);
+  for (const [x, y, w, h] of [[430, 220, 380, 26], [-30, 300, 250, 22], [560, 520, 360, 24], [-30, 470, 200, 20]]) {
+    g.rect(x, y, w, h, h / 2);
+  }
+  // 地面：黄土の平らな帯
+  g.noStroke(); g.fill(...OUDO);
+  g.rect(0, 620, W, H - 620);
+  g.stroke(...INK); g.strokeWeight(2);
+  g.line(0, 620, W, 620);
+  randomSeed(Date.now());
+  return g;
 }
 
 // --- 操作 -------------------------------------------------------------------------
