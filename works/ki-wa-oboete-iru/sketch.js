@@ -46,6 +46,11 @@ const GROW_TAU = 260;             // 太り方の時定数。三百年で断面�
 const SHINBOKU_AGE = 300;         // この樹齢から御神木（注連縄を張る）。明確な定義は無く、三百年から五百年を目安にする
 
 let drops = [];
+// 雨・雪・風が何をしているかを絵で見せるための状態
+let snowCover = 0;   // 屋根に積もった雪（0〜1）。降れば積もり、止めば解ける
+let wetness = 0;     // 地面の濡れ（0〜1）
+let splashes = [];   // 軒から落ちた雨が地面で跳ねた跡（雨落ち）
+let gusts = [];      // 風の筋
 
 function setup() {
   pixelDensity(DENSITY);
@@ -226,13 +231,18 @@ function draw() {
     stepGround(dt);
     stepTower(dt);
     stepYears(dt);
+    stepWeatherState(dt);
   }
 
   image(backdrop, 0, 0); // 空・霞・地面・和紙は最初に一度だけ描いたものを貼る
   drawTitle();
+  drawWetGround();
   drawWeather();
   drawTower();
+  drawSnowCaps();
+  drawGusts();
   drawRings();
+  drawWeatherCaption();
   image(patina, 0, 0); // 風化の層（四隅の暗がり・しみ・折り目）を最後に重ねる
   // 止まっているときは、始め方を画面の真ん中で伝える（「視差効果を減らす」設定だと最初から止まる）
   // 最初は幕で始め方を案内する。動かした後の一時停止は絵を覆わず、止まっていることだけ示す（止めて年輪を読めるように）
@@ -284,10 +294,10 @@ function stepTower(dt) {
       const above = i === STORIES - 1 ? null : tower.x[i + 1];
       let f = -k * (tower.x[i] - below) - c * (tower.v[i] - (i === 0 ? ground.v / dt : tower.v[i - 1]));
       if (above !== null) f += k * (above - tower.x[i]);
-      f += wind * 18 * (i + 1) / STORIES;
+      f += wind * 18 * (1 + snowCover * 0.5) * (i + 1) / STORIES; // 雪を載せた屋根は風も強く受ける
       // 心柱：各層を全体の平均へ引き寄せ、層ごとの暴れを抑える
       if (core) f += -60 * (tower.x[i] - avg) - 3 * tower.v[i] * 0.5;
-      tower.v[i] += f * h;
+      tower.v[i] += f * h / (1 + snowCover * 0.8); // 雪の重みで層が重くなり、揺れがゆっくり大きくなる
     }
     for (let i = 0; i < STORIES; i++) tower.x[i] += tower.v[i] * h;
   }
@@ -553,6 +563,12 @@ function drawInset() {
   circle(x, y, r * 2 + 8);
   noStroke(); fill(...INK, 190); textAlign(CENTER, TOP); textSize(12);
   text(age < 1 ? '輪切りの見立て　まだ輪は無い' : '輪切りの見立て（胸の高さ）　触れると年輪を読める', x, y + r + 10);
+  // いまの天気で、今年の輪がどうなるか。雨は太く、雪や嵐は細くする（addRing と同じ式の向き）
+  const rain = ui.rain.value(), snow = ui.snow.value(), storm = abs(ui.wind.value()) * (rain + snow);
+  const g = 1.4 + rain * 2.2 - snow * 0.9 - storm * 0.5;
+  const why = g > 2.3 ? '太め（雨が多い）' : g < 1.1 ? (snow > storm ? '細め（雪で寒い）' : '細め（嵐）') : 'ふつう';
+  fill(...(g < 1.1 ? SHU : INK), 200);
+  text(`今年の輪：${why}`, x, y + r + 26);
   // 虫眼鏡の印：丸窓に触れると拡大して読めることを、触る前から示す
   if (age >= 1) {
     const bx = x + r * 0.74, by = y + r * 0.74;
@@ -917,6 +933,88 @@ function drawTower() {
 }
 
 // --- 雨・雪・風 ------------------------------------------------------------------
+function stepWeatherState(dt) {
+  const rain = ui.rain.value(), snow = ui.snow.value();
+  snowCover = constrain(snowCover + (snow > 0.05 ? snow * 0.5 : -0.2) * dt, 0, snow > 0.05 ? 0.3 + snow * 0.7 : 1); // 降る量に見合うところまで積もる
+  wetness = constrain(wetness + (rain > 0.05 ? rain * 0.6 : -0.12) * dt, 0, 1);
+  for (const sp of splashes) sp.t -= dt * 2;
+  splashes = splashes.filter((sp) => sp.t > 0);
+  // 風の筋：風の強さに応じた本数を、風の向きに流す
+  const wind = ui.wind.value(), want = floor(abs(wind) * 14);
+  while (gusts.length < want) gusts.push({ x: random(W), y: random(60, 600), len: random(40, 110), sp: random(0.7, 1.3) });
+  if (gusts.length > want) gusts.length = want;
+  for (const g of gusts) {
+    g.x += wind * 14 * g.sp;
+    if (g.x > W + 120) g.x = -120; else if (g.x < -120) g.x = W + 120;
+  }
+}
+
+// 濡れた地面。いちばん下の軒の下だけは乾いたまま残り、深い軒が足元を守っていることが見える
+function drawWetGround() {
+  if (wetness < 0.02 || tower.fallen > 0) return;
+  const e = eaveLines()[0];
+  const y0 = 640, a = 85 * wetness;
+  noStroke();
+  // 濡れた土の色を、軒の下の境目と左右の端でぼかしながら細い短冊で塗る（四角い板に見えないように）
+  for (let x = 0; x < 760; x += 6) {
+    const edge = min(abs(x - (e.x1 - 6)), abs(x - (e.x2 + 6)));
+    const inside = x > e.x1 - 6 && x < e.x2 + 6;
+    if (inside) continue;
+    const k = min(1, edge / 36) * min(1, x / 60, (760 - x) / 60);
+    for (let j = 0; j < 4; j++) { fill(70, 54, 40, a * k * (1 - j * 0.24)); rect(x, y0 + j * 9, 6, 9); }
+  }
+  // 雨落ち：軒先の真下で水が跳ねる
+  stroke(...AI, 200); strokeWeight(1); noFill();
+  for (const sp of splashes) {
+    const r = (1 - sp.t) * 10 + 2;
+    arc(sp.x, 652, r * 2, r * 0.7, PI, TWO_PI);
+  }
+  // 乾いた足元の境目に、細い墨の点線
+  stroke(...INK, 90 * wetness);
+  for (const x of [e.x1 - 6, e.x2 + 6]) for (let y = y0; y < y0 + 36; y += 6) line(x, y, x, y + 3);
+}
+
+// 屋根に積もった雪。積もるほど塔は重くなる
+function drawSnowCaps() {
+  if (snowCover < 0.02 || tower.fallen > 0) return;
+  const th = 2 + snowCover * 7;
+  for (const e of eaveLines()) {
+    const w = e.x2 - e.x1, y = e.y - 10;
+    fill(244, 238, 226); stroke(...INK, 150); strokeWeight(1);
+    beginShape();
+    for (let k = 0; k <= 16; k++) {
+      const u = k / 16, x = e.x1 + 14 + (w - 28) * u;
+      // 屋根の反りに合わせて、真ん中ほど高く積もる
+      vertex(x, y - 6 * sin(PI * u) - th * pow(sin(PI * u), 0.6));
+    }
+    for (let k = 16; k >= 0; k--) vertex(e.x1 + 14 + (w - 28) * k / 16, y - 6 * sin(PI * k / 16));
+    endShape(CLOSE);
+  }
+}
+
+function drawGusts() {
+  if (!gusts.length) return;
+  const wind = ui.wind.value();
+  stroke(...INK, 70 + 90 * abs(wind)); strokeWeight(1.2); noFill();
+  for (const g of gusts) {
+    // 浮世絵の風の筋のように、少し波打つ細い線
+    beginShape();
+    for (let k = 0; k <= 8; k++) vertex(g.x - Math.sign(wind) * g.len * k / 8, g.y + sin(k * 0.8 + frameCount * 0.1 + g.y) * 2);
+    endShape();
+  }
+}
+
+// いま雨・雪・風が何をしているかを、塔の足元に一行で書く
+function drawWeatherCaption() {
+  const rain = ui.rain.value(), snow = ui.snow.value(), wind = abs(ui.wind.value());
+  const parts = [];
+  if (rain > 0.05) parts.push('雨：軒が受けて外へ落とし、足元は乾く');
+  if (snow > 0.05) parts.push(`雪：屋根に積もり、塔が重くなる ${floor(snowCover * 100)}%`);
+  if (wind > 0.05) parts.push(ui.build.value() === 'nail' ? '風：釘の塔は硬く、しならない' : '風：木組みがしなって受け流す');
+  noStroke(); fill(...INK, 190); textAlign(LEFT, BASELINE); textSize(12);
+  text(parts.length ? parts.join('　') : '雨・雪・風のスライダーを動かすと、塔と年輪が応える', 40, 712);
+}
+
 function drawWeather() {
   const rain = ui.rain.value(), snow = ui.snow.value(), wind = ui.wind.value();
   const want = floor((rain + snow) * MAX_DROPS / 2);
@@ -936,7 +1034,10 @@ function drawWeather() {
         }
       }
     }
-    if (d.y > 650 || d.x < -20 || d.x > W + 20) Object.assign(d, newDrop(-10));
+    if (d.y > 650 || d.x < -20 || d.x > W + 20) {
+      if (d.slide && !d.snow && d.y > 650 && splashes.length < 60) splashes.push({ x: d.x, t: 1 }); // 軒の外で地面に落ちる
+      Object.assign(d, newDrop(-10));
+    }
     if (d.snow) { noStroke(); fill(...INK, d.slide ? 60 : 120); circle(d.x, d.y, 3); }
     else { stroke(...(d.slide ? SHU : INK), d.slide ? 160 : 70); line(d.x, d.y, d.x - d.vx * 3, d.y - d.vy * 3.2); } // 広重の雨のように細く長い平行線
   }
