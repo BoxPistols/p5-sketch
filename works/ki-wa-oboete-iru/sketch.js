@@ -35,7 +35,7 @@ let dragShake = 0;
 // 年輪
 let rings, ringR = 2, age = 0, yearClock = 0, growthDip = 0;
 let ringLog = [];                // 1 年ごとの輪の記録。断面に触れたときの説明に使う
-let ringCard;
+let ringCard, learnDialog;
 let shinbokuAt = null;           // 御神木になった瞬間（millis）。注連縄を張る演出と告知に使う                     // その年の輪を説明する札（DOM）
 let yearQuake = 0, yearStorm = 0; // その年に受けた揺れと嵐の大きさ
 const RING_MAX = 150;             // 断面の半径（画面上）。塔が主役だが、年輪が読める大きさは保つ
@@ -49,7 +49,9 @@ let drops = [];
 function setup() {
   pixelDensity(DENSITY);
   frameRate(FPS);
-  createCanvas(W, H);
+  // キャンバスを包む枠。解説ボタンをキャンバスの右上に重ねるため
+  const stage = createDiv('').id('stage');
+  createCanvas(W, H).parent(stage);
   textFont('"Hiragino Mincho ProN", "Yu Mincho", serif'); // 明朝で、版本の文字に寄せる
   backdrop = makeBackdrop();
   patina = makePatina();
@@ -213,7 +215,17 @@ function draw() {
   // 止まっているときは、始め方を画面の真ん中で伝える（「視差効果を減らす」設定だと最初から止まる）
   if (paused) drawPausedVeil();
 
+  updateCursor();
   recordFrame(performance.now() - started);
+}
+
+// マウスの形で、触れる場所を示す。丸窓は拡大して読める、塔の上は左右にドラッグして揺らせる
+let cursorNow = '';
+function updateCursor() {
+  let c = 'default';
+  if (dist(mouseX, mouseY, INSET.x, INSET.y) < INSET.r && age >= 1) c = 'zoom-in';
+  else if (mouseX >= 0 && mouseX < 760 && mouseY > 40 && mouseY < 650) c = 'ew-resize';
+  if (c !== cursorNow) { cursor(c); cursorNow = c; }
 }
 
 function stepGround(dt) {
@@ -517,7 +529,16 @@ function drawInset() {
   strokeWeight(0.8);
   circle(x, y, r * 2 + 8);
   noStroke(); fill(...INK, 190); textAlign(CENTER, TOP); textSize(12);
-  text(age < 1 ? '輪切りの見立て　まだ輪は無い' : '輪切りの見立て（胸の高さ）', x, y + r + 10);
+  text(age < 1 ? '輪切りの見立て　まだ輪は無い' : '輪切りの見立て（胸の高さ）　触れると年輪を読める', x, y + r + 10);
+  // 虫眼鏡の印：丸窓に触れると拡大して読めることを、触る前から示す
+  if (age >= 1) {
+    const bx = x + r * 0.74, by = y + r * 0.74;
+    fill(...KASUMI); stroke(...INK); strokeWeight(1.4);
+    circle(bx, by, 30);
+    noFill(); strokeWeight(2);
+    circle(bx - 2, by - 2, 12);
+    line(bx + 2.5, by + 2.5, bx + 8, by + 8);
+  }
   textAlign(LEFT, BASELINE);
   return s;
 }
@@ -633,16 +654,16 @@ function mouseMoved() {
 }
 
 // 開いて読める説明の欄を 1 つ作る。facts は [見出し, 本文]、sources は [名前, URL]
-function learnSection(title, facts, sources) {
-  const learn = createElement('details').class('learn');
-  createElement('summary', title).parent(learn);
-  const dl = createElement('dl').parent(learn);
+function learnSection(body, title, facts, sources) {
+  const sec = createElement('section').parent(body);
+  createElement('h2', title).parent(sec);
+  const dl = createElement('dl').parent(sec);
   for (const [t, d] of facts) {
     const pair = createDiv('').parent(dl); // 見出しと本文を組にして、同じ列に並べる
     createElement('dt', t).parent(pair);
     createElement('dd', d).parent(pair);
   }
-  const src = createP('出典: ').parent(learn).class('src');
+  const src = createP('出典: ').parent(sec).class('src');
   for (const [label, url] of sources) createA(url, label, '_blank').parent(src).attribute('rel', 'noopener');
 }
 
@@ -650,8 +671,27 @@ function learnSection(title, facts, sources) {
 function buildLearn() {
   ringCard = createDiv('').id('ringcard').hide();
 
+  // 解説はダイアログに収める。画面の下に置くと、窓の高さによっては見切れるため
+  learnDialog = createElement('dialog').id('learn').attribute('aria-labelledby', 'learn-title');
+  const head = createDiv('').parent(learnDialog).class('head');
+  createElement('h1', '解説').parent(head).id('learn-title');
+  createButton('閉じる').parent(head).mousePressed(() => learnDialog.elt.close());
+  const body = createDiv('').parent(learnDialog).class('body');
+  // 外側（背景）をクリックしたら閉じる
+  learnDialog.elt.addEventListener('click', (e) => { if (e.target === learnDialog.elt) learnDialog.elt.close(); });
+
+  // 開くボタン：右上の題箋と同じ札の形に、和綴じ本の図柄と縦書きの「解説」
+  const open = createButton('').parent(select('#stage')).id('learn-open').attribute('aria-label', '解説を読む（五重塔と年輪のしくみ）');
+  open.html(`<svg viewBox="0 0 24 28" aria-hidden="true">
+      <rect x="4" y="2" width="17" height="24" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <line x1="8" y1="2" x2="8" y2="26" stroke="currentColor" stroke-width="1"/>
+      <g fill="currentColor"><circle cx="6" cy="6" r="1"/><circle cx="6" cy="11" r="1"/><circle cx="6" cy="16.5" r="1"/><circle cx="6" cy="22" r="1"/></g>
+      <rect x="13" y="5" width="5" height="12" fill="none" stroke="currentColor" stroke-width="1"/>
+    </svg><span>解説</span>`);
+  open.mousePressed(() => learnDialog.elt.showModal());
+
   // 五重塔のしくみ：地震と雨・雪・風への強さ。作品で単純化したところは、そうと書く
-  learnSection('五重塔のしくみ（地震と雨・雪・風への強さ）', [
+  learnSection(body, '五重塔のしくみ（地震と雨・雪・風への強さ）', [
     ['各層は積み重ねてあるだけ', '五重塔の各層は一つずつ独立して組まれ、下の層の上に載っている。一階から最上階までを貫く通し柱は無い。地震では各層が別々に、少しずつずれながら揺れる。'],
     ['心柱は塔に縛られていない', '塔の真ん中を貫く心柱は、多くの塔で各層と構造的に切り離され、上の方でわずかに接するだけになっている。地震では心柱と各層が別々に揺れ、その動きの食い違いが塔全体の揺れを抑えると考えられている。仕組みの詳しいところは、実際の塔の観測や模型の振動実験で今も調べられている。'],
     ['木組みは揺れを吸う', '継手・仕口で木と木を組んだ接合部は、揺れると擦れ合い、少しずつめり込みながら力を受け流す。釘や金物で硬く固めた建物は、しなる余地が少ないぶん、同じ揺れで接合部や部材に力が集まりやすい。'],
@@ -666,7 +706,7 @@ function buildLearn() {
     ['立命館大学 古材の強度に関する論文', 'https://ritsumei.repo.nii.ac.jp/record/8954/files/dmuch2_20.pdf'],
   ]);
 
-  learnSection('年輪のしくみ', [
+  learnSection(body, '年輪のしくみ', [
     ['伐った木は年輪が増えない', '年輪をつくる形成層は、生きている木の樹皮のすぐ内側にしかない。伐った丸太や切り株は、ほとんどの場合もう太らない。この作品で断面を丸窓に描いているのは、立っている木の幹を輪切りにしたらこう見える、という見立てだから。'],
     ['中心がいちばん古い', '年輪は、樹皮のすぐ内側にある形成層が毎年つくる。新しい木の層は古い層の外側に重なるので、中心（髄）が最初の年で、外側ほど新しい。'],
     ['1 年は淡い帯と濃い線でできている', '春に育つ部分（早材）は細胞が大きく壁が薄いので淡い。夏から秋に育つ部分（晩材）は細胞が小さく壁が厚いので濃い。この濃い部分の外側が 1 年の区切りになる。'],
@@ -686,16 +726,29 @@ function buildLearn() {
       pointer-events:none; z-index:2; }
     #ringcard strong { display:block; font-size:16px; font-weight:normal; color:rgb(${SHU}); margin-bottom:2px; }
     #ringcard p { margin:0; }
-    .learn { width:min(${W}px, calc(100vw - 32px)); box-sizing:border-box; padding:10px 14px; background:#cdbf9f;
-      color:#2a2522; border-radius:4px; font:14px/1.8 "Hiragino Mincho ProN","Yu Mincho",serif; }
-    .learn summary { cursor:pointer; }
-    .learn summary:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
-    .learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:4px 28px; margin:12px 0 4px; }
-    .learn dt { color:rgb(${SHU}); margin-top:8px; }
-    .learn dl > div { break-inside:avoid; }
-    .learn dd { margin:0; }
-    .learn .src { font-size:12px; color:#6b625a; margin:12px 0 0; }
-    .learn .src a { color:inherit; margin-right:14px; }`).parent(document.head);
+    #stage { position:relative; line-height:0; }
+    #learn-open { position:absolute; right:6.7%; top:3.6%; display:flex; flex-direction:column; align-items:center; gap:4px;
+      padding:8px 6px 10px; background:rgb(${KASUMI}); color:rgb(${INK}); border:1.5px solid rgb(${INK});
+      outline:0.8px solid rgb(${INK}); outline-offset:-5px; cursor:pointer; font:15px/1.2 "Hiragino Mincho ProN","Yu Mincho",serif; }
+    #learn-open svg { width:22px; height:26px; }
+    #learn-open span { writing-mode:vertical-rl; letter-spacing:0.15em; }
+    #learn-open:hover { color:rgb(${SHU}); }
+    #learn-open:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:3px; }
+    #learn { width:min(980px, calc(100vw - 32px)); max-height:min(86vh, 900px); padding:0; box-sizing:border-box;
+      background:#d6c8a8; color:#2a2522; border:1.5px solid rgb(${INK}); font:14px/1.8 "Hiragino Mincho ProN","Yu Mincho",serif; }
+    #learn::backdrop { background:rgba(36, 28, 22, 0.55); }
+    #learn .head { position:sticky; top:0; display:flex; justify-content:space-between; align-items:center;
+      padding:10px 18px; background:#cdbf9f; border-bottom:1px solid rgba(${INK},0.4); }
+    #learn h1 { font-size:18px; font-weight:normal; margin:0; }
+    #learn .head button { font:inherit; padding:2px 12px; background:#e2d6ba; border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
+    #learn .head button:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
+    #learn .body { padding:4px 18px 18px; }
+    #learn h2 { font-size:16px; font-weight:normal; margin:18px 0 0; padding-bottom:4px; border-bottom:1px solid rgba(${INK},0.3); }
+    #learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:4px 28px; margin:6px 0 4px; }
+    #learn dt { color:rgb(${SHU}); margin-top:8px; }
+    #learn dd { margin:0; }
+    #learn .src { font-size:12px; color:#5e5244; margin:10px 0 0; }
+    #learn .src a { color:inherit; margin-right:14px; }`).parent(document.head);
 }
 
 // --- 五重塔 ----------------------------------------------------------------------
@@ -978,15 +1031,18 @@ function makeBackdrop() {
 // --- 操作 -------------------------------------------------------------------------
 // 停止中に画面をクリックしたら始める
 function mousePressed() {
+  if (learnDialog?.elt.open) return; // 解説を開いている間は作品を触らない
   if (paused && mouseX >= 0 && mouseX <= W && mouseY >= 0 && mouseY <= H) togglePause();
 }
 
 function mouseDragged() {
+  if (learnDialog?.elt.open) return;
   if (mouseX < 760 && mouseY < H && abs(dragShake) < 1) quakeRecorded = false; // 手で揺らし始めたら、新しい地震として 1 本残す
   if (mouseX < 760 && mouseY < H) dragShake = constrain(dragShake + movedX * 0.8, -40, 40);
 }
 
 function keyPressed() {
+  if (learnDialog?.elt.open) return; // スペースなどは解説の操作に使う
   if (key === 's') saveCanvas('ki-wa-oboete-iru', 'png');
   if (key === ' ') { togglePause(); return false; }
   if (key === 'f') meter.hidden = !meter.hidden;
