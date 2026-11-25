@@ -34,8 +34,16 @@ button:hover { border-color: var(--shu); }
 #status { min-height: 1.7em; margin: 0; font-size: 14px; color: var(--muted); }
 #status.error { color: var(--shu); }
 
-#stage { background: var(--stage); border-radius: 4px; aspect-ratio: 3 / 2; display: flex; }
-#stage iframe { flex: 1; width: 100%; height: 100%; border: 0; display: block; }
+#stage { position: relative; background: var(--stage); border-radius: 4px; aspect-ratio: 3 / 2; }
+#stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+/* 描き始める前の枠は見せない（入れ替えまで前の絵を残す） */
+#stage iframe.pending { opacity: 0; pointer-events: none; }
+/* 最初の絵が出るまで（スクリプトの読み込み中も含む）出す。再実行では前の絵を残すので出さない */
+#stage::after {
+  content: '読み込み中'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #b9ab92; font-size: 14px; letter-spacing: 0.1em; pointer-events: none; transition: opacity 0.2s;
+}
+#stage.ready::after { opacity: 0; }
 
 .notes { margin-top: 28px; }
 .notes h2 { font-size: 18px; font-weight: normal; margin: 0 0 6px; }
