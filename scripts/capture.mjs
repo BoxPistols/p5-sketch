@@ -3,7 +3,8 @@
 //        pnpm capture <slug>     … 1 作品だけ
 // Chrome をヘッドレスで起動する。Chrome の場所が違うときは環境変数 CHROME で指定する
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 
@@ -26,11 +27,14 @@ if (works.length === 0) {
 for (const w of works) {
   const page = pathToFileURL(join(root, 'works', w.slug, 'index.html')).href + (w.capture ?? '');
   const out = join(root, 'works', w.slug, 'capture.png');
+  // 普段使っている Chrome のプロファイルとぶつからないよう、毎回使い捨てのプロファイルで起動する
+  const profile = mkdtempSync(join(tmpdir(), 'p5-capture-'));
   execFileSync(chrome, [
-    '--headless=new', '--hide-scrollbars', '--window-size=1240,860',
+    `--user-data-dir=${profile}`, '--headless=new', '--hide-scrollbars', '--window-size=1240,860',
     '--virtual-time-budget=3000', // 数フレーム描かせてから撮る
     // capture=1 を付けると、作品は「スペースキーで始める」の幕を出さずに動く
     `--screenshot=${out}`, page + (page.includes('?') ? '&' : '?') + 'capture=1',
-  ], { stdio: 'ignore', timeout: 60_000 });
+  ], { stdio: 'ignore', timeout: 90_000 });
+  rmSync(profile, { recursive: true, force: true });
   console.log(`撮りました: works/${w.slug}/capture.png`);
 }

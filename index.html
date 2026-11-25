@@ -4,8 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>p5 sketches</title>
+  <meta name="description" content="p5.js で作った作品の一覧。ブラウザの中で動かして触れる。">
+  <meta name="theme-color" content="#3a4656">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="p5 sketches">
+  <meta property="og:description" content="p5.js で作った作品の一覧。ブラウザの中で動かして触れる。">
+  <meta property="og:url" content="https://boxpistols.github.io/p5-sketch/">
+  <meta property="og:image" content="https://boxpistols.github.io/p5-sketch/works/ki-wa-oboete-iru/capture.png">
+  <meta property="og:locale" content="ja_JP">
+  <meta name="twitter:card" content="summary_large_image">
   <style>
-    :root { --paper: #f0e9da; --ink: #1c1816; --shu: #c43e2a; --muted: #6b625a; }
+    :root { --paper: #e2d4b8; --ink: #241c16; --shu: #ac422c; --muted: #6a5c4c; } /* 作品と同じ、焼けた和紙・褪せた朱 */
     html, body { margin: 0; background: var(--paper); color: var(--ink); }
     body { font: 15px/1.7 serif; padding: 40px 16px 64px; }
     main { max-width: 1080px; margin: 0 auto; }
@@ -34,7 +44,7 @@
         const list = document.getElementById('works');
         for (const w of works) {
           const li = document.createElement('li');
-          li.innerHTML = `<a href="works/${w.slug}/${w.capture || ''}">
+          li.innerHTML = `<a href="works/${w.slug}/">
             <img src="works/${w.slug}/capture.png" alt="" loading="lazy">
             <h2></h2><p></p></a>`;
           li.querySelector('h2').textContent = w.title;

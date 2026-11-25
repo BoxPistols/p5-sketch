@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const PAGES_URL = 'https://boxpistols.github.io/p5-sketch/'; // GitHub Pages で公開したときの URL（og:image は絶対 URL が要る）
 const [slug, title = slug] = process.argv.slice(2);
 if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
   console.error('使い方: pnpm new <slug> "<題名>"（slug は英小文字・数字・ハイフン。URL になる）');
@@ -23,6 +24,13 @@ writeFileSync(join(dir, 'index.html'), `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title}</title>
+  <meta name="description" content="${title}（p5.js の作品）">
+  <link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${title}">
+  <meta property="og:url" content="${PAGES_URL}works/${slug}/">
+  <meta property="og:image" content="${PAGES_URL}works/${slug}/capture.png">
+  <meta name="twitter:card" content="summary_large_image">
   <style>
     html, body { margin: 0; min-height: 100%; background: #111; }
     body { display: flex; align-items: center; justify-content: center; }
