@@ -98,9 +98,12 @@ function buildUI() {
   ui.wind = row('風', createSlider(-1, 1, 0.2, 0.01));
   ui.speed = row('時の速さ（年/秒）', createSlider(0, 60, 8, 1)); // 千年を最速 17 秒ほどで
   ui.core = row('心柱', createCheckbox('', true));
-  ui.build = row('組み方', createSelect());
-  ui.build.option('木組み（継手・仕口）', 'wood');
-  ui.build.option('釘で固める', 'nail');
+  // 二択なので、両方が常に見えるラジオにする（横に並ぶ切り替え）
+  ui.build = row('組み方', createRadio('build'));
+  ui.build.option('wood', '木組み（継手・仕口）');
+  ui.build.option('nail', '釘で固める');
+  ui.build.selected('wood');
+  ui.build.class('seg');
   ui.build.changed(resetTower);
   const btns = createDiv('').parent(panel).class('row');
   ui.play = createButton('止める（スペース）').parent(btns).class('play').mousePressed(togglePause);
@@ -118,6 +121,14 @@ function buildUI() {
     #panel input[type=range] { width:120px; accent-color:rgb(${SHU}); }
     #panel button, #panel select { font:inherit; padding:3px 10px; background:#e2d6ba;
       border:1px solid #2a2522; border-radius:3px; cursor:pointer; }
+    #panel input[type=checkbox] { accent-color:rgb(${INK}); width:16px; height:16px; } /* OS の青を使わず墨色に */
+    #panel .seg { display:inline-flex; border:1px solid #2a2522; border-radius:3px; overflow:hidden; }
+    #panel .seg label { position:relative; display:inline-flex; cursor:pointer; }
+    #panel .seg label + label { border-left:1px solid #2a2522; }
+    #panel .seg input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+    #panel .seg span { padding:3px 12px; background:#e2d6ba; }
+    #panel .seg input:checked + span { background:rgb(${INK}); color:#efe4cc; }
+    #panel .seg input:focus-visible + span { outline:2px solid rgb(${SHU}); outline-offset:-3px; }
     #panel button:hover, #panel button.play { background:rgb(${SHU}); color:#fff; border-color:rgb(${SHU}); }
     #panel button:focus-visible, #panel select:focus-visible, #panel input:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }`);
   css.parent(document.head);
