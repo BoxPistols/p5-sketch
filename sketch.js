@@ -26,6 +26,8 @@ let dragShake = 0;
 let rings, ringR = 6, age = 0, yearClock = 0;
 let yearQuake = 0, yearStorm = 0; // その年に受けた揺れと嵐の大きさ
 const RING_MAX = 250;
+const MAX_AGE = 1000;             // 千年で断面がいっぱいになる
+const SHINBOKU_AGE = 500;         // この樹齢から御神木（注連縄を張る）
 const RC = { x: 900, y: 330 };    // 断面の中心（画面座標）
 
 let drops = [];
@@ -41,6 +43,9 @@ function setup() {
   resetRings();
   buildUI();
   setupMeter();
+  // ?age=800 のように付けると、その樹齢から始める（確認・共有用）
+  const startAge = Number(new URLSearchParams(location.search).get('age')) || 0;
+  for (let i = 0; i < min(startAge, MAX_AGE); i++) addRing();
   document.addEventListener('visibilitychange', updateLoop);
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) paused = true;
   updateLoop();
@@ -72,7 +77,7 @@ function buildUI() {
   ui.rain = row('雨', createSlider(0, 1, 0.3, 0.01));
   ui.snow = row('雪', createSlider(0, 1, 0, 0.01));
   ui.wind = row('風', createSlider(-1, 1, 0.2, 0.01));
-  ui.speed = row('時の速さ（年/秒）', createSlider(0, 20, 4, 0.5));
+  ui.speed = row('時の速さ（年/秒）', createSlider(0, 60, 8, 1)); // 千年を最速 17 秒ほどで
   ui.core = row('心柱', createCheckbox('', true));
   ui.build = row('組み方', createSelect());
   ui.build.option('木組み（継手・仕口）', 'wood');
@@ -82,6 +87,7 @@ function buildUI() {
   createButton('地震を起こす').parent(btns).mousePressed(startQuake);
   createButton('建て直す').parent(btns).mousePressed(resetTower);
   createButton('年輪を新しく').parent(btns).mousePressed(resetRings);
+  createButton('百年進める').parent(btns).mousePressed(() => { for (let i = 0; i < 100; i++) addRing(); });
 
   const css = createElement('style', `
     body { flex-direction: column; gap: 10px; }
@@ -178,17 +184,20 @@ function stepYears(dt) {
 
 // --- 年輪 ----------------------------------------------------------------------
 function addRing() {
-  if (ringR > RING_MAX - 4) return;
+  if (age >= MAX_AGE) return;
   age++;
-  // 雨の多い年は太く、雪の多い年・嵐の年は細る
-  const w = 1.4 + ui.rain.value() * 2.2 - ui.snow.value() * 0.9 - yearStorm * 0.5 + noise(age * 0.3) * 1.2;
-  const r = ringR + max(0.6, w);
+  // 雨の多い年は太く、雪の多い年・嵐の年は細る（平均がほぼ 1 になる係数）
+  const w = max(0.3, (1.4 + ui.rain.value() * 2.2 - ui.snow.value() * 0.9 - yearStorm * 0.5 + noise(age * 0.3) * 1.2) / 2.5);
+  // 実際の木と同じく、太るほど 1 年の輪は細くなる。千年で断面いっぱいになる曲線（r ∝ 年^0.75）
+  const base = 0.75 * RING_MAX / MAX_AGE * pow(age / MAX_AGE, -0.25);
+  const r = min(RING_MAX - 2, ringR + base * w);
+  const step = r - ringR;
   const cx = rings.width / 2, cy = rings.height / 2;
   const scar = constrain(yearQuake, 0, 3);
   rings.noFill();
-  // 晩材（濃い線）
-  rings.stroke(...(scar > 0.6 ? SHU : INK), scar > 0.6 ? 200 : 110 + yearStorm * 60);
-  rings.strokeWeight(scar > 0.6 ? 1.4 : 0.8);
+  // 晩材（濃い線）。輪が細い老木では線を淡くし、重なって真っ黒にならないようにする
+  rings.stroke(...(scar > 0.6 ? SHU : INK), scar > 0.6 ? 200 : map(step, 0.15, 1.2, 8, 110, true) * (0.4 + 1.6 * pow(noise(age * 0.07 + 50), 2)) + yearStorm * 40); // 細い輪ほど淡く、気候の波で濃淡の帯を作る
+  rings.strokeWeight(scar > 0.6 ? 1.4 : step < 0.5 ? 0.6 : 0.8);
   rings.beginShape();
   for (let a = 0; a < TWO_PI; a += TWO_PI / 140) {
     const n = noise(cos(a) * 1.3 + 10, sin(a) * 1.3 + 10, r * 0.01);
@@ -213,14 +222,41 @@ function drawRings() {
   noFill();
   stroke(...INK, 60);
   circle(RC.x, RC.y, RING_MAX * 2 + 4);
+  if (age >= SHINBOKU_AGE) drawShimenawa();
   noStroke();
   fill(...INK);
   textAlign(CENTER);
   textSize(15);
-  text(`心柱の断面　樹齢 ${age} 年`, RC.x, RC.y + RING_MAX + 34);
+  text(`${age >= SHINBOKU_AGE ? '御神木' : '心柱の断面'}　樹齢 ${age} 年`, RC.x, RC.y + RING_MAX + 34);
   textSize(12);
   fill(...INK, 150);
   text('朱の輪は地震を受けた年。木はその年を覚えている', RC.x, RC.y + RING_MAX + 54);
+}
+
+// 注連縄と紙垂。断面の外周に縄を巻き、白い紙垂を下げる
+function drawShimenawa() {
+  const r = RING_MAX + 8;
+  noFill();
+  stroke(176, 150, 96); strokeWeight(7);
+  circle(RC.x, RC.y, r * 2);
+  // 縄のより目
+  stroke(...INK, 90); strokeWeight(1);
+  for (let a = 0; a < TWO_PI; a += TWO_PI / 72) {
+    line(RC.x + cos(a) * (r - 3), RC.y + sin(a) * (r - 3), RC.x + cos(a + 0.05) * (r + 3), RC.y + sin(a + 0.05) * (r + 3));
+  }
+  // 紙垂（上半分に 4 枚、稲妻形）
+  for (let k = 0; k < 4; k++) {
+    const a = -PI * 0.8 + k * PI * 0.2;
+    const x = RC.x + cos(a) * r, y = RC.y + sin(a) * r;
+    push();
+    translate(x, y);
+    fill(255); stroke(...INK, 120); strokeWeight(1);
+    beginShape();
+    vertex(0, 0); vertex(10, 0); vertex(10, 10); vertex(16, 10); vertex(16, 22); vertex(22, 22); vertex(22, 34);
+    vertex(12, 34); vertex(12, 22); vertex(6, 22); vertex(6, 10); vertex(0, 10);
+    endShape(CLOSE);
+    pop();
+  }
 }
 
 // --- 五重塔 ----------------------------------------------------------------------
