@@ -617,20 +617,10 @@ function mouseMoved() {
   if (!isLooping()) redraw();
 }
 
-// 年輪のしくみ。パネルの下に、開いて読める説明を置く
-function buildLearn() {
-  ringCard = createDiv('').id('ringcard').hide();
-  const learn = createElement('details').id('learn');
-  createElement('summary', '年輪のしくみ').parent(learn);
-  const facts = [
-    ['伐った木は年輪が増えない', '年輪をつくる形成層は、生きている木の樹皮のすぐ内側にしかない。伐った丸太や切り株は、ほとんどの場合もう太らない。この作品で断面を丸窓に描いているのは、立っている木の幹を輪切りにしたらこう見える、という見立てだから。'],
-    ['中心がいちばん古い', '年輪は、樹皮のすぐ内側にある形成層が毎年つくる。新しい木の層は古い層の外側に重なるので、中心（髄）が最初の年で、外側ほど新しい。'],
-    ['1 年は淡い帯と濃い線でできている', '春に育つ部分（早材）は細胞が大きく壁が薄いので淡い。夏から秋に育つ部分（晩材）は細胞が小さく壁が厚いので濃い。この濃い部分の外側が 1 年の区切りになる。'],
-    ['太るほど 1 年の輪は細くなる', '幹の周りが長くなるほど、同じだけ育っても輪の幅は薄く延ばされる。千年を超える木の外側の輪は、1 ミリに満たないこともある。'],
-    ['輪の太さは、その年の天気の記録', '暖かく雨の多い年は太く、寒い年や乾いた年は細い。同じ地域の木は太さの並びが似るので、年代のわかった木と照らし合わせると、木が伐られた年まで決められる（年輪年代法）。'],
-    ['法隆寺五重塔の心柱は 594 年に伐られた', '解体修理のときに切り取られた心柱（ヒノキ）の円盤を年輪年代法で調べ、伐採年は 594 年とされた。ただし塔のほかの部材は 7 世紀後半のもので、建立の年代はまだ議論がある。'],
-    ['傷は輪に残る', '地震や嵐で傷んだ木は、その後の数年の輪が細くなったり乱れたりすることがある。この作品の朱の輪は、その跡を目に見えるように強めたもの。'],
-  ];
+// 開いて読める説明の欄を 1 つ作る。facts は [見出し, 本文]、sources は [名前, URL]
+function learnSection(title, facts, sources) {
+  const learn = createElement('details').class('learn');
+  createElement('summary', title).parent(learn);
   const dl = createElement('dl').parent(learn);
   for (const [t, d] of facts) {
     const pair = createDiv('').parent(dl); // 見出しと本文を組にして、同じ列に並べる
@@ -638,13 +628,42 @@ function buildLearn() {
     createElement('dd', d).parent(pair);
   }
   const src = createP('出典: ').parent(learn).class('src');
-  for (const [label, url] of [
+  for (const [label, url] of sources) createA(url, label, '_blank').parent(src).attribute('rel', 'noopener');
+}
+
+// 学べる説明。パネルの下に、開いて読める欄を置く（五重塔・年輪）
+function buildLearn() {
+  ringCard = createDiv('').id('ringcard').hide();
+
+  // 五重塔のしくみ：地震と雨・雪・風への強さ。作品で単純化したところは、そうと書く
+  learnSection('五重塔のしくみ（地震と雨・雪・風への強さ）', [
+    ['各層は積み重ねてあるだけ', '五重塔の各層は一つずつ独立して組まれ、下の層の上に載っている。一階から最上階までを貫く通し柱は無い。地震では各層が別々に、少しずつずれながら揺れる。'],
+    ['心柱は塔に縛られていない', '塔の真ん中を貫く心柱は、多くの塔で各層と構造的に切り離され、上の方でわずかに接するだけになっている。地震では心柱と各層が別々に揺れ、その動きの食い違いが塔全体の揺れを抑えると考えられている。仕組みの詳しいところは、実際の塔の観測や模型の振動実験で今も調べられている。'],
+    ['木組みは揺れを吸う', '継手・仕口で木と木を組んだ接合部は、揺れると擦れ合い、少しずつめり込みながら力を受け流す。釘や金物で硬く固めた建物は、しなる余地が少ないぶん、同じ揺れで接合部や部材に力が集まりやすい。'],
+    ['深い軒は雨から木を守る', '屋根を柱から大きく張り出すと、雨が柱や壁にかかりにくくなる。木は濡れたままだと腐りやすいので、雨をかけないこと、濡れてもすぐ乾くことが長持ちにつながる。反りのある屋根は、雨や雪解けの水を軒先へ流して落とす。'],
+    ['古い木はすぐには弱らない', '木材は伐ってから数百年は強さが上がり、その後ゆるやかに下がるとされる。ただし樹種によって違い、古い材の強さはまだ十分には分かっていない。'],
+    ['この作品での表し方', '五つの層をばねでつなぎ、毎フレーム揺れを計算している。木組みはやわらかく擦れて揺れを吸うばね、釘は硬く揺れを吸わないばねとして、層の間のずれが大きいと傷みが積もる。心柱は各層を全体の平均へ引き寄せる力として足している。風は塔を横から押す力、雨や雪は軒で受けて外へ流す粒として描いている。実際の塔の揺れ方をそのまま再現したものではない。'],
+  ], [
+    ['国土交通省 観光庁 多言語解説文（五重塔）', 'https://www.mlit.go.jp/tagengo-db/common/001553333.pdf'],
+    ['関西大学 薬師寺東塔の振動観測', 'https://wps.itc.kansai-u.ac.jp/eisuken/wp-content/uploads/sites/318/2024/10/01%E8%96%AC%E5%B8%AB%E5%AF%BA%E6%9D%B1%E5%A1%94%E6%8C%AF%E5%8B%95%E8%A6%B3%E6%B8%AC.pdf'],
+    ['防災科学技術研究所 五重塔模型の振動台実験（2006）', 'https://www.bosai.go.jp/info/press/2006/pdf/gojyu2006.pdf'],
+    ['国土技術政策総合研究所 長持ち住宅の手引き', 'https://www.nilim.go.jp/lab/hcg/nagamoti/dist/pdf/resident.pdf'],
+    ['立命館大学 古材の強度に関する論文', 'https://ritsumei.repo.nii.ac.jp/record/8954/files/dmuch2_20.pdf'],
+  ]);
+
+  learnSection('年輪のしくみ', [
+    ['伐った木は年輪が増えない', '年輪をつくる形成層は、生きている木の樹皮のすぐ内側にしかない。伐った丸太や切り株は、ほとんどの場合もう太らない。この作品で断面を丸窓に描いているのは、立っている木の幹を輪切りにしたらこう見える、という見立てだから。'],
+    ['中心がいちばん古い', '年輪は、樹皮のすぐ内側にある形成層が毎年つくる。新しい木の層は古い層の外側に重なるので、中心（髄）が最初の年で、外側ほど新しい。'],
+    ['1 年は淡い帯と濃い線でできている', '春に育つ部分（早材）は細胞が大きく壁が薄いので淡い。夏から秋に育つ部分（晩材）は細胞が小さく壁が厚いので濃い。この濃い部分の外側が 1 年の区切りになる。'],
+    ['太るほど 1 年の輪は細くなる', '幹の周りが長くなるほど、同じだけ育っても輪の幅は薄く延ばされる。千年を超える木の外側の輪は、1 ミリに満たないこともある。'],
+    ['輪の太さは、その年の天気の記録', '暖かく雨の多い年は太く、寒い年や乾いた年は細い。同じ地域の木は太さの並びが似るので、年代のわかった木と照らし合わせると、木が伐られた年まで決められる（年輪年代法）。'],
+    ['法隆寺五重塔の心柱は 594 年に伐られた', '解体修理のときに切り取られた心柱（ヒノキ）の円盤を年輪年代法で調べ、伐採年は 594 年とされた。ただし塔のほかの部材は 7 世紀後半のもので、建立の年代はまだ議論がある。'],
+    ['傷は輪に残る', '地震や嵐で傷んだ木は、その後の数年の輪が細くなったり乱れたりすることがある。この作品の朱の輪は、その跡を目に見えるように強めたもの。'],
+  ], [
     ['長野県林業総合センター「年輪の話」', 'https://www.pref.nagano.lg.jp/ringyosogo/joho/kids/nenrin.html'],
     ['北海道立総合研究機構 林産試験場の資料', 'https://www.hro.or.jp/upload/9781/8910-4.pdf'],
     ['光谷拓実「法隆寺五重塔心柱の年輪年代」（奈良文化財研究所, 2001）', 'https://sitereports.nabunken.go.jp/article/10011'],
-  ]) {
-    createA(url, label, '_blank').parent(src).attribute('rel', 'noopener');
-  }
+  ]);
 
   createElement('style', `
     #ringcard { position:absolute; width:280px; padding:10px 12px; background:rgb(${KASUMI}); color:rgb(${INK});
@@ -652,16 +671,16 @@ function buildLearn() {
       pointer-events:none; z-index:2; }
     #ringcard strong { display:block; font-size:16px; font-weight:normal; color:rgb(${SHU}); margin-bottom:2px; }
     #ringcard p { margin:0; }
-    #learn { width:min(${W}px, calc(100vw - 32px)); box-sizing:border-box; padding:10px 14px; background:#cdbf9f;
+    .learn { width:min(${W}px, calc(100vw - 32px)); box-sizing:border-box; padding:10px 14px; background:#cdbf9f;
       color:#2a2522; border-radius:4px; font:14px/1.8 "Hiragino Mincho ProN","Yu Mincho",serif; }
-    #learn summary { cursor:pointer; }
-    #learn summary:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
-    #learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:4px 28px; margin:12px 0 4px; }
-    #learn dt { color:rgb(${SHU}); margin-top:8px; }
-    #learn dl > div { break-inside:avoid; }
-    #learn dd { margin:0; }
-    #learn .src { font-size:12px; color:#6b625a; margin:12px 0 0; }
-    #learn .src a { color:inherit; margin-right:14px; }`).parent(document.head);
+    .learn summary { cursor:pointer; }
+    .learn summary:focus-visible { outline:2px solid rgb(${SHU}); outline-offset:2px; }
+    .learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:4px 28px; margin:12px 0 4px; }
+    .learn dt { color:rgb(${SHU}); margin-top:8px; }
+    .learn dl > div { break-inside:avoid; }
+    .learn dd { margin:0; }
+    .learn .src { font-size:12px; color:#6b625a; margin:12px 0 0; }
+    .learn .src a { color:inherit; margin-right:14px; }`).parent(document.head);
 }
 
 // --- 五重塔 ----------------------------------------------------------------------
