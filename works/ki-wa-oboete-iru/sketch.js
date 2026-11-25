@@ -692,6 +692,76 @@ function mouseMoved() {
   if (!isLooping()) redraw();
 }
 
+// --- 解説の図 ----------------------------------------------------------------
+// 見出しごとに、内容を動きで見せる小さな SVG。動きは CSS のアニメーションで、閉じている間は描かれない
+const FC = { ink: '#241c16', shu: '#ac422c', late: '#a07c52', ko: '#dac49c', ai: '#344658', bark: '#46362a' };
+function svgFig(inner) {
+  return `<svg viewBox="0 0 96 72" width="96" height="72">${inner}</svg>`;
+}
+// 五つの層。snake = 層ごとに少しずつずれて揺れる
+function figLayers(fill = FC.ko) {
+  let g = `<line x1="4" y1="62" x2="92" y2="62" stroke="${FC.ink}"/>`;
+  for (let i = 0; i < 5; i++) {
+    const w = 44 - i * 6, y = 62 - (i + 1) * 11, x = 48 - w / 2;
+    g += `<g class="sw" style="--a:${(i + 1) * 1.5};animation-delay:${-i * 0.45}s">
+      <rect x="${x}" y="${y + 2}" width="${w}" height="9" fill="${fill}" stroke="${FC.ink}" stroke-width="0.8"/>
+      <rect x="${x - 6}" y="${y}" width="${w + 12}" height="2.6" fill="${FC.ink}"/></g>`;
+  }
+  return g;
+}
+// 年輪の円盤。radii の輪が中心から順に現れる。red は朱にする輪の番号
+function figDisk(cx, cy, R, radii, { red = -1, grow = true, bark = true } = {}) {
+  let g = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="${FC.ko}" stroke="${bark ? FC.bark : FC.late}" stroke-width="${bark ? 2.5 : 1}"/>`;
+  g += `<circle cx="${cx}" cy="${cy}" r="1" fill="${FC.bark}"/>`;
+  radii.forEach((r, i) => {
+    const c = i === red ? FC.shu : FC.late;
+    g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c}" stroke-width="${i === red ? 1.6 : 1}"
+      ${grow ? `class="ring" style="transform-origin:${cx}px ${cy}px;animation-delay:${i * 0.4}s"` : ''}/>`;
+  });
+  return g;
+}
+function learnFigure(title) {
+  const t = (s) => title.startsWith(s);
+  if (t('各層は')) return svgFig(figLayers());
+  if (t('心柱は')) return svgFig(figLayers('rgba(218,196,156,0.55)') +
+    `<line class="pole" x1="48" y1="62" x2="48" y2="6" stroke="${FC.shu}" stroke-width="2.2"/>`);
+  if (t('木組み')) return svgFig(`
+    <g class="slide"><path d="M6 28 H46 V32 H58 V40 H46 V44 H6 Z" fill="${FC.ko}" stroke="${FC.ink}"/></g>
+    <path d="M50 22 H90 V50 H50 V40 H60 V32 H50 Z" fill="#c9a97c" stroke="${FC.ink}"/>
+    <g class="rub" stroke="${FC.shu}" stroke-width="1"><line x1="53" y1="16" x2="56" y2="12"/><line x1="58" y1="17" x2="62" y2="13"/><line x1="53" y1="56" x2="56" y2="60"/></g>`);
+  if (t('深い軒')) {
+    let g = `<rect x="0" y="62" width="14" height="6" fill="${FC.ai}" opacity="0.35"/><rect x="82" y="62" width="14" height="6" fill="${FC.ai}" opacity="0.35"/>
+      <line x1="0" y1="62" x2="96" y2="62" stroke="${FC.ink}"/>
+      <rect x="36" y="28" width="4" height="34" fill="${FC.shu}"/><rect x="56" y="28" width="4" height="34" fill="${FC.shu}"/>
+      <path d="M14 27 Q48 6 82 27 L78 29 Q48 13 18 29 Z" fill="${FC.ink}"/>`;
+    for (const [x, d] of [[6, 0], [90, 0.5], [3, 1.0]]) g += `<line class="fall" x1="${x}" y1="0" x2="${x - 1}" y2="6" stroke="${FC.ai}" style="animation-delay:${d}s"/>`;
+    for (const [x, d] of [[30, 0.2], [48, 0.7], [64, 0.4]]) g += `<line class="stop" x1="${x}" y1="0" x2="${x - 1}" y2="6" stroke="${FC.ai}" style="animation-delay:${d}s"/>`;
+    for (const [x, d] of [[15, 0.3], [81, 0.9]]) g += `<line class="drip" x1="${x}" y1="28" x2="${x}" y2="33" stroke="${FC.shu}" style="animation-delay:${d}s"/>`;
+    return svgFig(g);
+  }
+  if (t('古い木')) return svgFig(`
+    <path d="M12 6 V60 H92" fill="none" stroke="${FC.ink}"/>
+    <text x="14" y="10" font-size="8" fill="${FC.ink}">強さ</text><text x="92" y="70" font-size="8" fill="${FC.ink}" text-anchor="end">年月</text>
+    <path class="draw" pathLength="100" d="M12 42 C28 24, 44 18, 56 20 S78 30, 92 36" fill="none" stroke="${FC.shu}" stroke-width="1.8"/>`);
+  if (t('伐った木')) return svgFig(
+    figDisk(26, 32, 20, [5, 9, 13, 17], { grow: true }) +
+    figDisk(70, 32, 18, [5, 9, 13], { grow: false, bark: false }) +
+    `<text x="26" y="68" font-size="8" text-anchor="middle" fill="${FC.ink}">立つ木</text><text x="70" y="68" font-size="8" text-anchor="middle" fill="${FC.ink}">切り株</text>`);
+  if (t('中心が')) return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 20, 24, 28]));
+  if (t('1 年は')) {
+    let g = '';
+    for (let i = 0; i < 6; i++) g += `<rect x="${8 + i * 14}" y="16" width="11" height="34" fill="${FC.ko}"/><rect x="${19 + i * 14}" y="16" width="3" height="34" fill="${FC.late}"/>`;
+    return svgFig(`<g class="wipe">${g}</g><text x="13" y="62" font-size="8" fill="${FC.ink}">早材</text><text x="20" y="11" font-size="8" fill="${FC.ink}">晩材</text>
+      <line x1="20.5" y1="13" x2="20.5" y2="17" stroke="${FC.ink}" stroke-width="0.6"/>`);
+  }
+  if (t('太るほど')) return svgFig(figDisk(48, 36, 34, [5, 12, 18, 23, 27, 30, 32, 33]));
+  if (t('輪の太さ')) return svgFig(figDisk(48, 36, 32, [4, 11, 13, 20, 22, 23, 29, 31]));
+  if (t('法隆寺')) return svgFig(figDisk(40, 34, 28, [4, 8, 11, 14, 17, 20, 23, 26], { red: 7 }) +
+    `<text x="72" y="40" font-size="10" fill="${FC.shu}">594</text>`);
+  if (t('傷は')) return svgFig(figDisk(48, 36, 32, [4, 8, 12, 16, 17.5, 19, 23, 27], { red: 3 }));
+  return '';
+}
+
 // 開いて読める説明の欄を 1 つ作る。facts は [見出し, 本文]、sources は [名前, URL]
 // 五重塔と年輪は並列なので、ダイアログの中でタブにする。tabs にタブを足し、本文は選んだものだけ見せる
 function learnSection(body, tabs, label, title, facts, sources) {
@@ -706,6 +776,13 @@ function learnSection(body, tabs, label, title, facts, sources) {
   const dl = createElement('dl').parent(sec);
   for (const [t, d] of facts) {
     const pair = createDiv('').parent(dl); // 見出しと本文を組にして、同じ列に並べる
+    const fig = learnFigure(t);
+    if (fig) {
+      // 内容をそのまま動かして見せる小さな図。押すと動く／止まる（動きを減らす設定のときの再生にも使う）
+      pair.class('has-fig');
+      const f = createDiv(fig).parent(pair).class('fig').attribute('aria-hidden', 'true');
+      f.mousePressed(() => f.toggleClass('play'));
+    }
     createElement('dt', t).parent(pair);
     createElement('dd', d).parent(pair);
   }
@@ -807,6 +884,34 @@ function buildLearn() {
     #learn dl { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:4px 28px; margin:6px 0 4px; }
     #learn dt { color:rgb(${SHU}); margin-top:8px; }
     #learn dd { margin:0; }
+    #learn dl > div.has-fig { display:grid; grid-template-columns:96px 1fr; grid-template-rows:auto 1fr; column-gap:14px; align-items:start; } /* 図の高さで見出しの行が伸びないように */
+    #learn .has-fig .fig { grid-row:span 2; margin-top:12px; cursor:pointer; }
+    #learn .fig svg { display:block; }
+    #learn .fig .sw { animation:fig-sw 2.4s ease-in-out infinite; }
+    #learn .fig .pole { transform-origin:48px 62px; animation:fig-pole 2.4s ease-in-out infinite; animation-delay:-1.2s; }
+    #learn .fig .slide { animation:fig-slide 1.6s ease-in-out infinite; }
+    #learn .fig .rub { animation:fig-rub 1.6s ease-in-out infinite; }
+    #learn .fig .fall { animation:fig-fall 1.4s linear infinite; }
+    #learn .fig .stop { animation:fig-stop 1.4s linear infinite; }
+    #learn .fig .drip { animation:fig-drip 1.4s ease-in infinite; }
+    #learn .fig .draw { stroke-dasharray:100; animation:fig-draw 4.5s ease-in-out infinite; }
+    #learn .fig .ring { animation:fig-ring 6s ease-out infinite both; }
+    #learn .fig .wipe { transform-origin:8px 0; animation:fig-wipe 4s ease-out infinite; }
+    @keyframes fig-sw { 0%,100% { transform:translateX(calc(var(--a) * -1px)); } 50% { transform:translateX(calc(var(--a) * 1px)); } }
+    @keyframes fig-pole { 0%,100% { transform:rotate(-1.5deg); } 50% { transform:rotate(1.5deg); } }
+    @keyframes fig-slide { 0%,100% { transform:translateX(-1.5px) rotate(-0.6deg); } 50% { transform:translateX(1.5px) rotate(0.6deg); } }
+    @keyframes fig-rub { 0%,40%,100% { opacity:0; } 50%,60% { opacity:1; } }
+    @keyframes fig-fall { from { transform:translateY(-8px); } to { transform:translateY(64px); } }
+    @keyframes fig-stop { 0% { transform:translateY(-8px); opacity:1; } 55% { transform:translateY(14px); opacity:1; } 56%,100% { transform:translateY(14px); opacity:0; } }
+    @keyframes fig-drip { 0%,45% { transform:translateY(0); opacity:0; } 50% { opacity:1; } 100% { transform:translateY(30px); opacity:1; } }
+    @keyframes fig-draw { 0% { stroke-dashoffset:100; } 60%,90% { stroke-dashoffset:0; opacity:1; } 100% { stroke-dashoffset:0; opacity:0; } }
+    @keyframes fig-ring { 0% { opacity:0; transform:scale(0.8); } 10% { opacity:1; transform:scale(1); } 80% { opacity:1; } 100% { opacity:0; } }
+    @keyframes fig-wipe { 0% { transform:scaleX(0); } 60%,90% { transform:scaleX(1); opacity:1; } 100% { transform:scaleX(1); opacity:0; } }
+    /* 動きを減らす設定では止めた絵を見せ、マウスを載せたときか押したときだけ動かす */
+    @media (prefers-reduced-motion: reduce) {
+      #learn .fig:not(.play):not(:hover) * { animation:none !important; }
+      #learn .fig::after { content:'触れると動く'; display:block; font-size:11px; color:#5e5244; text-align:center; line-height:1.4; }
+    }
     #learn .src { font-size:12px; color:#5e5244; margin:10px 0 0; }
     #learn .src a { color:inherit; margin-right:14px; }`).parent(document.head);
 }
