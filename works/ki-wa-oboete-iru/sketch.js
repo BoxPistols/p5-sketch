@@ -51,6 +51,11 @@ let snowCover = 0;   // 屋根に積もった雪（0〜1）。降れば積もり
 let wetness = 0;     // 地面の濡れ（0〜1）
 let splashes = [];   // 軒から落ちた雨が地面で跳ねた跡（雨落ち）
 let gusts = [];      // 風の筋
+// 花鳥風月：梅の小枝にとまる鶯、風に散る梅の花びら、霞の奥の月。どれも天気と揺れに応える
+const UGUISU = [112, 102, 52], UGUISU_DARK = [74, 66, 34], UME = [238, 222, 214];
+let perch = null;                      // 鶯がとまる小枝の先（木を描くたびに決まる）
+let bird = { state: 'away', x: -40, y: 120, t: 0, calm: 0, song: 0 };
+let petals = [];
 
 function setup() {
   pixelDensity(DENSITY);
@@ -232,16 +237,21 @@ function draw() {
     stepTower(dt);
     stepYears(dt);
     stepWeatherState(dt);
+    stepBird(dt);
   }
 
   image(backdrop, 0, 0); // 空・霞・地面・和紙は最初に一度だけ描いたものを貼る
+  drawMoon();
   drawTitle();
   drawWetGround();
   drawWeather();
   drawTower();
   drawSnowCaps();
   drawGusts();
+  perch = null;
   drawRings();
+  drawPetals();
+  drawBird();
   drawWeatherCaption();
   image(patina, 0, 0); // 風化の層（四隅の暗がり・しみ・折り目）を最後に重ねる
   // 止まっているときは、始め方を画面の真ん中で伝える（「視差効果を減らす」設定だと最初から止まる）
@@ -513,6 +523,23 @@ function drawTree(cx, tr, h, top) {
 
   // 手前の葉
   drawCanopy(cx + sway, ccy + ch * 0.08, cw * 0.92, ch * 0.9, 1, FOLIAGE);
+  // 梅の小枝：樹冠の左から一本突き出し、花を三つ付ける。鶯はこの枝先にとまる
+  if (age >= 25) {
+    // 樹冠の左の縁より外まで伸ばし、花と鶯が葉に埋もれないようにする
+    const bx = cx - cw * 0.4 + sway * 0.6, by = ccy + ch * 0.1;
+    const ex = cx - cw * 0.5 - 84 + sway, ey = by - 26;
+    stroke(...INK); strokeWeight(2.4); noFill();
+    bezier(bx, by, bx - 12, by - 2, ex + 10, ey + 6, ex, ey);
+    for (const u of [0.35, 0.62, 0.9]) {
+      const px = bezierPoint(bx, bx - 12, ex + 10, ex, u), py = bezierPoint(by, by - 2, ey + 6, ey, u) - 3;
+      noStroke(); fill(...UME);
+      stroke(...INK, 90); strokeWeight(0.5);
+      for (let k = 0; k < 5; k++) circle(px + cos(k * TWO_PI / 5) * 3, py + sin(k * TWO_PI / 5) * 3, 4.4);
+      noStroke();
+      fill(...SHU); circle(px, py, 1.6);
+    }
+    perch = { x: ex + 6, y: ey - 1 };
+  }
 }
 
 // 樹冠：墨の輪郭をもつ平らな葉のかたまりを、楕円の範囲に散らして重ねる（浮世絵の葉の描き方）
@@ -1037,6 +1064,81 @@ function drawTower() {
   text('塔の上を左右にドラッグすると地面を揺らせる', 200, 690);
 }
 
+// --- 花鳥風月 --------------------------------------------------------------------
+// 鶯は静かなときだけ枝にとまる。地震・強い風・大雪で飛び去り、収まって少しすると戻る
+function stepBird(dt) {
+  const rough = quakeTime > 0 || abs(dragShake) > 0.5 || abs(ui.wind.value()) > 0.7 || ui.snow.value() > 0.6 || tower.fallen > 0;
+  bird.calm = rough ? 0 : bird.calm + dt;
+  bird.t += dt;
+  if (bird.song > 0) bird.song -= dt;
+  if (bird.state === 'perched' && (rough || !perch)) { bird.state = 'leaving'; bird.vx = -5; bird.vy = -3.5; }
+  else if (bird.state === 'away' && perch && bird.calm > 3) { bird.state = 'coming'; bird.x = -30; bird.y = 90; }
+  if (bird.state === 'leaving') {
+    bird.x += bird.vx * dt * 30; bird.y += bird.vy * dt * 30;
+    if (bird.x < -40 || bird.y < -40) bird.state = 'away';
+  } else if (bird.state === 'coming') {
+    if (!perch || rough) { bird.state = 'leaving'; bird.vx = -5; bird.vy = -3.5; return; }
+    const dx = perch.x - bird.x, dy = perch.y - bird.y, d = Math.hypot(dx, dy);
+    if (d < 4) { bird.state = 'perched'; bird.song = 2.2; }
+    else { const sp = min(d, 9) * dt * 30 / 1.4; bird.x += dx / d * sp; bird.y += dy / d * sp + sin(bird.t * 12) * 0.6; }
+  } else if (bird.state === 'perched' && perch) {
+    bird.x = perch.x; bird.y = perch.y; // 枝が風で揺れれば一緒に揺れる
+    if (bird.calm > 0 && random() < 0.002) bird.song = 2.2; // ときどき鳴く
+  }
+}
+
+function drawBird() {
+  if (bird.state === 'away') return;
+  const flying = bird.state !== 'perched';
+  const face = flying ? (bird.state === 'leaving' ? -1 : 1) : -1; // とまっているときは外（左）を向く
+  push();
+  translate(bird.x, bird.y);
+  scale(face * 1.45, 1.45); // 背景の空に対して小さすぎないように
+  stroke(...INK); strokeWeight(1);
+  if (flying) { // 羽ばたき
+    const f = sin(bird.t * 26) * 7;
+    fill(...UGUISU_DARK);
+    triangle(-2, -2, 6, -2, 0, -2 - f);
+  }
+  fill(...UGUISU);
+  ellipse(0, -6, 15, 9);                       // 胴
+  triangle(-6, -7, -15, -10, -14, -5);         // 尾
+  circle(7, -10, 7);                           // 頭
+  fill(...UGUISU_DARK); noStroke();
+  ellipse(-1, -6, 7, 4);                       // 翼
+  fill(...INK); circle(8, -11, 1.6);           // 目
+  fill(...KASUMI); stroke(...INK, 120); strokeWeight(0.6);
+  line(6, -12, 10, -12.5);                     // 眉斑
+  noStroke(); fill(...INK); triangle(10, -10, 13.5, -9.5, 10, -8.6); // くちばし
+  if (!flying) { stroke(...INK); strokeWeight(1); line(-1, -2, -2, 1); line(2, -2, 2, 1); } // 足
+  pop();
+  // 鳴き声は縦書きの小さな字で、枝の上に
+  if (bird.song > 0 && !flying) {
+    const a = min(1, bird.song) * 200;
+    noStroke(); fill(...INK, a); textSize(10); textAlign(CENTER, TOP);
+    const t = 'ほうほけきょ';
+    for (let i = 0; i < t.length; i++) text(t[i], bird.x - 26, bird.y - 78 + i * 10.5);
+    textAlign(LEFT, BASELINE);
+  }
+}
+
+// 風が吹くと、梅の小枝から花びらが散る。雪の日は散らさない
+function drawPetals() {
+  const wind = ui.wind.value();
+  if (!paused && perch && abs(wind) > 0.25 && ui.snow.value() < 0.3 && petals.length < 14 && random() < abs(wind) * 0.12) {
+    petals.push({ x: perch.x + random(-6, 30), y: perch.y + random(-4, 8), r: random(TWO_PI), s: random(0.8, 1.2) });
+  }
+  noStroke();
+  for (const pt of petals) {
+    if (!paused) { pt.x += wind * 3.2 * pt.s + sin(pt.r) * 0.5; pt.y += 0.9 * pt.s; pt.r += 0.08; }
+    push(); translate(pt.x, pt.y); rotate(pt.r);
+    fill(...UME, 230); ellipse(0, 0, 5, 3.2);
+    fill(...SHU, 120); circle(-1.6, 0, 1);
+    pop();
+  }
+  petals = petals.filter((pt) => pt.y < 640 && pt.x > -10 && pt.x < W + 10);
+}
+
 // --- 雨・雪・風 ------------------------------------------------------------------
 function stepWeatherState(dt) {
   const rain = ui.rain.value(), snow = ui.snow.value();
@@ -1166,6 +1268,26 @@ function drawTitle() {
   // 題箋（左上）。浮世絵の題名の札のように、縦書きで枠に入れる
   drawCartouche(40, 26, '木は覚えている', 24);
   drawCartouche(88, 26, '五重塔と心柱と年輪', 12, true);
+  // 落款：題の下に朱の印を一つ。版元や絵師の印のように、白抜きで「年輪」
+  const sx = 46, sy = 252;
+  noStroke(); fill(...SHU, 225);
+  rect(sx, sy, 26, 26, 2);
+  fill(...KASUMI); textAlign(CENTER, CENTER); textSize(11);
+  text('年', sx + 13, sy + 7.5); text('輪', sx + 13, sy + 19);
+  textAlign(LEFT, BASELINE);
+}
+
+// 霞の奥の月。雨や雪の日は雲に隠れて薄くなる
+function drawMoon() {
+  const a = 1 - constrain(ui.rain.value() + ui.snow.value(), 0, 1) * 0.8;
+  if (a < 0.05) return;
+  const x = 610, y = 104, r = 30;
+  noStroke(); fill(...KASUMI, 70 * a); circle(x, y, r * 2 + 18); // 月の暈
+  fill(240, 230, 204, 230 * a); circle(x, y, r * 2);
+  stroke(...INK, 60 * a); strokeWeight(1); noFill(); circle(x, y, r * 2);
+  // 月の前を横切るすやり霞の一筋
+  noStroke(); fill(...KASUMI, 200 * a);
+  rect(x - 50, y + 10, 100, 6, 3);
 }
 
 // 縦書きの札。淡い地に墨の二重枠
