@@ -11,6 +11,10 @@ const MAX_DROPS = 260;      // 雨・雪の粒の上限。増やすほど重く�
 
 const W = 1200, H = 720;
 const INK = [28, 24, 22], SHU = [196, 62, 42], PAPER = [240, 233, 218];
+// 立体にするための色。朱と墨の陰、木口（断面）、樹皮
+const SHU_DARK = [142, 44, 30], WALL = [226, 215, 194], ROOF_TOP = [74, 64, 58];
+const KOGUCHI = [233, 217, 184], BARK = [74, 58, 46], BARK_LIGHT = [112, 92, 72], NAWA = [176, 150, 96];
+const SQ = 0.35;                  // 丸太の上面を斜めから見たときの縦のつぶれ
 
 let paused = false, meter;
 let ui = {};
@@ -215,45 +219,89 @@ function addRing() {
   ringR = r;
 }
 
-function drawRings() {
-  imageMode(CENTER);
-  image(rings, RC.x, RC.y);
-  imageMode(CORNER);
-  noFill();
-  stroke(...INK, 60);
-  circle(RC.x, RC.y, RING_MAX * 2 + 4);
-  if (age >= SHINBOKU_AGE) drawShimenawa();
-  noStroke();
-  fill(...INK);
-  textAlign(CENTER);
-  textSize(15);
-  text(`${age >= SHINBOKU_AGE ? '御神木' : '心柱の断面'}　樹齢 ${age} 年`, RC.x, RC.y + RING_MAX + 34);
-  textSize(12);
-  fill(...INK, 150);
-  text('朱の輪は地震を受けた年。木はその年を覚えている', RC.x, RC.y + RING_MAX + 54);
+// 心柱の丸太を斜め上から見る。上面が年輪、側面が樹皮。幹は樹齢とともに太く高くなる
+const LOG_BASE_Y = 560;           // 丸太の底面の中心
+function logShape() {
+  const rx = ringR + 5;           // 樹皮の厚みを足す
+  const ry = rx * SQ;
+  const tall = 40 + ringR * 1.3;
+  return { rx, ry, top: LOG_BASE_Y - tall, bottom: LOG_BASE_Y };
 }
 
-// 注連縄と紙垂。断面の外周に縄を巻き、白い紙垂を下げる
-function drawShimenawa() {
-  const r = RING_MAX + 8;
-  noFill();
-  stroke(176, 150, 96); strokeWeight(7);
-  circle(RC.x, RC.y, r * 2);
-  // 縄のより目
-  stroke(...INK, 90); strokeWeight(1);
-  for (let a = 0; a < TWO_PI; a += TWO_PI / 72) {
-    line(RC.x + cos(a) * (r - 3), RC.y + sin(a) * (r - 3), RC.x + cos(a + 0.05) * (r + 3), RC.y + sin(a + 0.05) * (r + 3));
+function drawRings() {
+  const { rx, ry, top, bottom } = logShape();
+  const cx = RC.x;
+  // 地面の影（光が左上なので右へ）
+  noStroke(); fill(...INK, 30);
+  ellipse(cx + rx * 0.2, bottom + ry * 0.5, rx * 2.15, ry * 1.3); // 画面の右端からはみ出さない幅
+
+  // 側面（樹皮）。左が明るく右が暗いグラデーションで円柱に見せる
+  const ctx = drawingContext;
+  const grad = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
+  grad.addColorStop(0, `rgb(${BARK_LIGHT})`);
+  grad.addColorStop(0.35, `rgb(${BARK})`);
+  grad.addColorStop(1, `rgb(${INK})`);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(cx - rx, top);
+  ctx.lineTo(cx - rx, bottom);
+  ctx.ellipse(cx, bottom, rx, ry, 0, PI, 0, true); // 底面の手前側の弧
+  ctx.lineTo(cx + rx, top);
+  ctx.closePath();
+  ctx.fill();
+  // 樹皮の縦の割れ目。手前の半周だけ、円柱に沿って間隔が詰まる
+  stroke(...INK, 110); strokeWeight(1); noFill();
+  for (let k = 1; k < 28; k++) {
+    const th = (k / 28) * PI;
+    const x0 = cx - rx * cos(th);
+    const off = ry * sin(th);
+    beginShape();
+    for (let s = 0; s <= 6; s++) {
+      const y = lerp(top, bottom, s / 6) + off;
+      vertex(x0 + (noise(k * 3.1, s * 0.7) - 0.5) * 5 * sin(th), y);
+    }
+    endShape();
   }
-  // 紙垂（上半分に 4 枚、稲妻形）
+
+  // 上面（木口）。年輪の画像を縦につぶして貼る
+  noStroke(); fill(...KOGUCHI);
+  ellipse(cx, top, rx * 2, ry * 2);
+  const gw = rings.width; // 年輪の画像は実寸で、上面の楕円にちょうど重なる
+  image(rings, cx - gw / 2, top - (gw * SQ) / 2, gw, gw * SQ);
+  noFill(); stroke(...BARK); strokeWeight(5);
+  ellipse(cx, top, rx * 2, ry * 2);
+
+  if (age >= SHINBOKU_AGE) drawShimenawa(cx, rx, ry, lerp(top, bottom, 0.38));
+
+  noStroke(); fill(...INK); textAlign(CENTER); textSize(15);
+  text(`${age >= SHINBOKU_AGE ? '御神木' : '心柱の木'}　樹齢 ${age} 年`, cx, 682);
+  textSize(12); fill(...INK, 150);
+  text('朱の輪は地震を受けた年。木はその年を覚えている', cx, 700);
+}
+
+// 注連縄と紙垂。幹の手前の半周に縄を巻き、白い紙垂を垂らす
+function drawShimenawa(cx, rx, ry, y) {
+  noFill();
+  stroke(...NAWA); strokeWeight(10);
+  beginShape();
+  for (let s = 0; s <= 24; s++) { const th = (s / 24) * PI; vertex(cx - (rx + 3) * cos(th), y + ry * sin(th)); }
+  endShape();
+  // 縄のより目
+  stroke(...INK, 100); strokeWeight(1);
+  for (let s = 1; s < 30; s++) {
+    const th = (s / 30) * PI;
+    const x = cx - (rx + 3) * cos(th), yy = y + ry * sin(th);
+    line(x - 3, yy - 4, x + 3, yy + 4);
+  }
+  // 紙垂（稲妻形）を 4 枚
   for (let k = 0; k < 4; k++) {
-    const a = -PI * 0.8 + k * PI * 0.2;
-    const x = RC.x + cos(a) * r, y = RC.y + sin(a) * r;
+    const th = PI * (0.2 + k * 0.2);
     push();
-    translate(x, y);
+    translate(cx - (rx + 3) * cos(th) - 8, y + ry * sin(th) + 5);
     fill(255); stroke(...INK, 120); strokeWeight(1);
     beginShape();
-    vertex(0, 0); vertex(10, 0); vertex(10, 10); vertex(16, 10); vertex(16, 22); vertex(22, 22); vertex(22, 34);
-    vertex(12, 34); vertex(12, 22); vertex(6, 22); vertex(6, 10); vertex(0, 10);
+    vertex(0, 0); vertex(10, 0); vertex(10, 10); vertex(16, 10); vertex(16, 22); vertex(22, 22); vertex(22, 36);
+    vertex(12, 36); vertex(12, 22); vertex(6, 22); vertex(6, 10); vertex(0, 10);
     endShape(CLOSE);
     pop();
   }
@@ -267,6 +315,9 @@ function drawTower() {
   line(30 + ground.x, groundY, 570 + ground.x, groundY);
   noStroke(); fill(...INK, 40);
   rect(baseX - 80 + ground.x, groundY, 160, 10);
+  // 地面に落ちる影。光が左上なので右へ伸び、塔の揺れについていく
+  fill(...INK, 28);
+  ellipse(baseX + 40 + ground.x + tower.x[STORIES - 1] * 0.4, groundY + 6, 300, 16);
 
   const fall = tower.fallen;
   let prevX = ground.x;
@@ -278,15 +329,29 @@ function drawTower() {
     push();
     translate(baseX + x, y);
     rotate(tilt);
-    // 柱（朱）
-    fill(...SHU); noStroke();
+    // 立体：右奥へ下がる側面。光は左上から当たるので、側面は陰になる
+    const dx = bw * 0.22, dy = -bw * 0.12;
+    noStroke();
+    fill(...INK, 70);
+    quad(bw / 2, -sh + 26, bw / 2 + dx, -sh + 26 + dy, bw / 2 + dx, dy, bw / 2, 0);
+    fill(...SHU_DARK);
+    quad(bw / 2 + dx - 6, -sh + 26 + dy, bw / 2 + dx, -sh + 26 + dy, bw / 2 + dx, dy, bw / 2 + dx - 6, dy);
+    // 正面の壁（塊に見せる）と柱（朱）
+    fill(...WALL);
+    rect(-bw / 2, -sh + 26, bw, sh - 26);
+    fill(...SHU);
     rect(-bw / 2, -sh + 26, 8, sh - 26);
     rect(bw / 2 - 8, -sh + 26, 8, sh - 26);
-    // 壁と貫
+    // 貫
     stroke(...INK); strokeWeight(1);
     line(-bw / 2, -sh * 0.45, bw / 2, -sh * 0.45);
+    // 屋根の上面：前の稜線から奥へ。正面より淡い墨で、面の向きの違いを出す
+    noStroke();
+    fill(...ROOF_TOP);
+    quad(-ew / 2, -sh + 16, 0, -sh + 4, dx, -sh + 4 + dy * 1.6, ew / 2 + dx, -sh + 16 + dy);
+    quad(0, -sh + 4, ew / 2, -sh + 16, ew / 2 + dx, -sh + 16 + dy, dx, -sh + 4 + dy * 1.6);
     // 屋根：反りのある深い軒
-    fill(...INK); noStroke();
+    fill(...INK);
     beginShape();
     // p5 2.x で bezierVertex の引数が変わったため、反りの点は bezierPoint で自前に打つ
     for (let s = 0; s <= 10; s++) {
@@ -300,6 +365,9 @@ function drawTower() {
     vertex(ew / 2 - 6, -sh + 26);
     vertex(-ew / 2 + 6, -sh + 26);
     endShape(CLOSE);
+    // 垂木の小口：軒先に並ぶ小さな明るい点で、軒の厚みを見せる
+    fill(...PAPER, 150);
+    for (let rx = -ew / 2 + 14; rx < ew / 2 - 12; rx += 9) rect(rx, -sh + 22, 3, 2);
     // 傷み：ひび
     if (tower.damage > 0.2) {
       stroke(...SHU, 255 * tower.damage); strokeWeight(1.5);
